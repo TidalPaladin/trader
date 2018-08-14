@@ -1,8 +1,12 @@
 import requests
+import ftplib as ftp
+
 from enum import Enum
 import json
+import csv
 
 IEX_URL_REGEX = "https://api.iextrading.com/1.0/stock/%s/%s/%s"
+NASDAQ_FTP_HOST = "ftp://ftp.nasdaqtrader.com/"
 
 
 def get_history(stock_symbol, timeframe, output_path=""):
@@ -123,3 +127,46 @@ def iex_raw_query(stock_symbol, query_type, timeframe="", param_dict=[]):
     if not result.status_code == 200:
         raise IOError('Got abnormal error code %i' % result.status_code)
     return result
+
+
+def download_symbols(output_path):
+    """
+    Fetch a list of all listed stock symbols and dump the list into an output file.
+    Output file consists of symbols separated by '\n'
+
+    Parameters
+    ---
+    output_path : string
+        File path where the resultant symbols will be stored
+
+    Post
+    ---
+    'output_path' file created or overwritten with updated NASDAQ symbols
+    """
+
+    SYMBOL_DIR = "SymbolDirectory"
+    SYMBOL_FILE = "nasdaqlisted.txt"
+
+    # Download CSV symbol file over FTP
+    session = ftp.FTP(NASDAQ_FTP_HOST)
+    session.cwd(SYMBOL_DIR)
+    session.retrbinary("RETR " + SYMBOL_FILE, open(output_path, 'wb').write)
+    session.quit()
+
+    # Parse CSV file into '\n' separated symbol-only list
+    with open('eggs.csv', 'rb') as csvfile:
+        reader = csv.reader(csvfile, delimiter='|')
+        print(reader[0])
+
+
+def get_symbol_list(source_file):
+    """
+    Read a list of NASDAQ symbols previously written to a file with download_symbols().
+    File list should be '\n' delimited. Returns a simple list of symbols sorted alphabetically
+
+    Parameters
+    ---
+    source_file : string
+        Path to the symbol file
+    """
+    return open(source_file).read().splitlines()

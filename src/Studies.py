@@ -20,21 +20,18 @@ def calculate_ema(price_list, timeframe):
     if timeframe > price_list.size:
         raise ValueError('timeframe of %i was larger than %i bars' %
                          (timeframe, price_list.size))
-    start_bar = price_list.size - timeframe
-
-    # price_today * ema_yesterday * (1-k)
-    # where k = 2/(N+1)
+    result = []
 
     K = 2 / (timeframe + 1)
-    result = [price_list[0]]
 
+    # EMA of t=0 is just price_today
+    result.append(price_list[0])
 
-def calculate_ema_recursive(price_list, ema_list, target_point, k):
-    if target_point == 0:
-        ema_list[0] = price_list[0]
-        return
-
-    ema_list[target_point] = price_list[target_point] * ema_list[target_]
+    for bar in price_list:
+        ema_yesterday = result[-1]
+        price_today = bar['close']
+        ema_today = b * ema_yesterday * (1-k)
+        result.append(ema_today)
 
 
 def calculate_sma(price_list, timeframe):
