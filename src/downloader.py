@@ -1,11 +1,22 @@
+"""
+Web scraper designed to fetch financial data about stocks and store various timeframes of data. Handles only the retrieval and storage of financial data, computation and display are handled elsewhere
+
+author: Scott Chase Waggener
+date:   8/27/18
+"""
+
 import requests
 import ftplib as ftp
 import os
-
+import sqlite3
 import json
 import csv
+import candle
 
+# Simple requests to this URL return JSON data
 IEX_URL_REGEX = "https://api.iextrading.com/1.0/stock/%s/%s/%s"
+
+# Connect here to fetch a list of NASDAQ listed stocks
 NASDAQ_FTP_HOST = "ftp.nasdaqtrader.com"
 
 SYMBOL_FILE = 'symbols.txt'
@@ -170,10 +181,55 @@ def precond_check_str_type(str_name, str_value):
         raise ValueError(str_name + ' must not be empty')
 
 
-def is_valid_stock(symbol):
+def is_valid_stock(symbol: str) -> bool:
     """Check if a stock symbol is NASDAQ listed"""
     global SYMBOL_LIST
     if not SYMBOL_LIST:
         SYMBOL_LIST = open(SYMBOL_FILE).read().splitlines()
     precond_check_str_type('symbol', symbol)
     return symbol.upper() in SYMBOL_LIST
+
+
+def init_sql_database(filename):
+    """ Initialize a sqllite database from a .db file and return the connection object
+        If the file doesn't exist it will be created
+    """
+    if type(filename) is not str:
+        raise TypeError('filename must be a string')
+    if not len(filename):
+        raise ValueError('filename must not be empty')
+    if ".db" in filename:
+        raise ValueError('filename must be a .db file')
+
+    conn = sqlite3.connect(filename):
+
+    cursor = conn.cursor()
+
+    # Candles hold the high / low / volume, etc
+    cursor.execute("""CREATE TYPE candle IS TABLE OF money""")
+
+    # Historical prices are represented as a table of floats
+    cursor.execute("""CREATE TYPE price_hist IS TABLE OF float""")
+    cursor.execute("""CREATE TABLE stocks (
+        symbol text,
+        """)
+
+
+def sql_check_table_exists(sql_cursor: sqlite3.Cursor, table_name: str):
+    if not len(table_name):
+        raise TypeError('table_name must not be empty')
+
+    SQL_TEST_EXISTS = """SELECT name FROM sqlite_master WHERE type='table' AND name='%s'"""
+    sql_cursor.execute(SQL_TEST_EXISTS % table_name)
+    return sql_cursor.fetchone()
+
+
+def write_candle_to_db(sql_file: str, stock_symbol: str, candle: candle.Candle):
+    """Write price data from a candle to the SQL database"""
+    if not len(sql_file):
+        raise ValueError('sql_file must not be empty')
+    if not is_valid_stock(symbol):
+        raise ValueError('symbol %s is not a stock' % symbol)
+
+    # Open table for specified symbol, create table if it doesn't exist
+    if not sql_check_table_exists(stock_symbol):
