@@ -21,7 +21,7 @@ class Portfolio:
     def num_positions(self) -> int:
         return len(self.positions)
 
-    def exit(self, 
+    #def exit(self, 
 
 
 
@@ -41,9 +41,13 @@ class Strategy:
         self.max_investment = 0.8
 
     def set_stop_margin(self, margin_factor: float):
-        """Set a coefficient used to scale the stoploss"""
-        if margin_factor < -1 or margin_factor > 1:
-            raise ValueError('must have -1 <= margin_factor <= 1')
+        """Set a coefficient used to scale the stoploss.
+        Stoploss will be set at the support price * margin_factor. Default = 1
+        """
+        if margin_factor <= 0:
+            raise ValueError('must have 0 < margin_factor ')
+        if margin_factor >= 1 + self.max_risk_factor:
+            raise ValueError('must have margin_factor < self.mask_risk_factor + 1')
         self.margin_fact = margin_factor
 
     def set_target_ratio(self, ratio: float):
@@ -58,20 +62,17 @@ class Strategy:
             raise ValueError('must have 0 < factor <= 1')
         self.max_investment = factor
 
-    def stop_loss(self, entry: Entry, pf: Portfolio) -> float:
-        """Calculate a stop loss for an entry using this strategy"""
+    def stoploss(self, entry: Entry) -> float:
         
-        risk_scale = self.risk / entry.simple_risk(self.margin_fact))
-        
-        
-        
-        
-        target_pos = pf.value * min(risk_scale, self.max_investment)
-        
-        # Position size must not exceed available liquidity
-        actual_pos = min(target_pos, pf.liquidity - entry.price / 2)
+        risk = 1 - entry.support * self.margin_fact / entry.price
+        risk_scale = self.risk / risk
+        return risk_scale
 
-
+        
+    def price_target(self, entry: Entry) -> float:
+        """Calculate the target growth factor to achieve risk:reward goal"""
+        return self.ratio / self.stop_loss_factor(entry)
+        
 
     def make_position(self, entry: Entry) -> Position:
         """Apply the strategy to a possibly entry, creating a Position"""
@@ -92,14 +93,45 @@ class Entry:
         self.price = price
         self.support = support
 
-    def simple_risk(self, window: float) -> float:
+    def simple_risk(self) -> float:
         """Return the risk percentage as a decimal relative to support"""
         if window < 0:
             raise ValueError('Must have window >= 0')
-        return self.support * (1-window) / self.price
+        return self.support / self.price
+        
+    def support_search(self, tar_risk: float) -> float:
+        """Given a target risk, determine where the support would need to be"""
+        if tar_risk <= 0:
+            raise ValueError('must have tar_risk > 0')
+        return (1-tar_risk) * self.price
+
+    def percent_change(self, new_price: float) -> float:
+        """Given a target price, calculate the percent change"""
+        if new_price < 0:
+            raise ValueError('must have new_price >= 0')
+        return new_price / self.price
+
+class Position:
+
+    def __init__(self, entry: Entry, strat: Strategy, pf: Portfolio):
+        """Take a position at an entry point following a strategy"""
+        self.entry = entry
+        self.strat = strat
+        self.pf = pf
+
+        # Apply the strategy to generate values
+        self.stoploss = 
+
+    def (self) -> float:
+        target_pos = self.pf.value * min(self.strat.risk_scale, self.strat.max_investment)
+        
+        # Position size must not exceed available liquidity
+        actual_pos = min(target_pos, pf.liquidity - entry.price / 2)
         
 
-
+    def stop_loss(self, entry: Entry, pf: Portfolio) -> float:
+        """Calculate a stop loss for an entry using this strategy"""
+        return self.stop_loss_factor(entry) * entry.price 
 
 # The maximum amount of PORTFOLIO_VAL to risk on a trade
 
