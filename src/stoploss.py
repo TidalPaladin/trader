@@ -111,6 +111,16 @@ class Entry:
             raise ValueError('must have new_price >= 0')
         return new_price / self.price
 
+    def __lt__(self, other: Entry) -> bool:
+        """Compare entry points based on simple risk"""
+        # Simple risk gives a ratio of support / price, so higher ratio = lower risk
+        return self.simple_risk() > other.simple_risk
+
+    def __eq__(self, other) -> bool:
+        return self.simple_risk() == other.simple_risk()
+
+    def __neq__(self
+
 class Position:
 
     def __init__(self, entry: Entry, strat: Strategy, pf: Portfolio):
@@ -121,18 +131,48 @@ class Position:
 
         # Apply the strategy to generate values
         self.stoploss = 
-
+        self.shares
+= 
     def (self) -> float:
         target_pos = self.pf.value * min(self.strat.risk_scale, self.strat.max_investment)
         
         # Position size must not exceed available liquidity
         actual_pos = min(target_pos, pf.liquidity - entry.price / 2)
         
+    def investment(self):
+        return self.entry_price() * self.shares
+
+    def entry_price(self):
+        return self.entry.price
+
+    def shares(self):
+        return self.shares
 
     def stop_loss(self, entry: Entry, pf: Portfolio) -> float:
         """Calculate a stop loss for an entry using this strategy"""
         return self.stop_loss_factor(entry) * entry.price 
 
+    def roi(self, gain: float) -> float:
+        """Given a return, calculate profits on the investment"""
+        return self.entry.pri
+
+    def __repr__(data: dict):
+        if not data:
+            print("Stock is not a good buy")
+            return
+        
+        REGEX = """Buy %i shares at $%0.2f worth $%0.2f with stop at $%0.2f
+                Risking $%0.2f for %0.2f percent of a $%0.2f portfolio
+                """
+        
+        FORMAT = [
+            self.shares,
+            self.entry.market,
+        print(REGEX % (data['shares'], data['market'], data['equity'], data['stop']))
+        print(REGEX2 % (data['risk'], data['risk_percent']*100, PORTFOLIO_VAL) )
+        print("2:1 share price target = $%0.2f +%0.2f" % (data['target'], data['target_percent'] * 100))
+        print("1.05x -> $%0.2f" % (data['equity'] * 0.05))
+        print("1.10x -> $%0.2f" % (data['equity'] * 0.10))
 # The maximum amount of PORTFOLIO_VAL to risk on a trade
 
 MAX_RISK = 0.02
@@ -172,15 +212,3 @@ def shares_to_buy(market: float, support: float) -> dict:
     result['target_percent'] = result['target'] / market - 1
     return result
 
-def print_result(data: dict):
-    if not data:
-        print("Stock is not a good buy")
-        return
-    
-    REGEX = "Buy %i shares at $%0.2f worth $%0.2f with stop at $%0.2f"
-    REGEX2 = "Risking $%0.2f for %0.2f percent of a $%0.2f portfolio"
-    print(REGEX % (data['shares'], data['market'], data['equity'], data['stop']))
-    print(REGEX2 % (data['risk'], data['risk_percent']*100, PORTFOLIO_VAL) )
-    print("2:1 share price target = $%0.2f +%0.2f" % (data['target'], data['target_percent'] * 100))
-    print("1.05x -> $%0.2f" % (data['equity'] * 0.05))
-    print("1.10x -> $%0.2f" % (data['equity'] * 0.10))
