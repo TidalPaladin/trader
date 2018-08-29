@@ -141,12 +141,12 @@ class Position:
         # Determine an investment such that the portfolio risk agrees with strategy
         scale = self.strat.risk / risk_this_trade 
         target_pos = self.pf.value * min(scale, self.strat.max_investment)
-        target_pos = min(target_pos, pf.liquidity - entry.price / 2)
+        target_pos = min(target_pos, pf.buy_power - entry.price / 2)
 
         self.shares = self.entry.to_shares(target_pos)
-        self.value = self.shares * self.entry.value
+        self.value = self.shares * self.entry.price
         self.target = entry.price * (1 + strat.risk_ratio * risk_this_trade)
-        self.risk = (1 - self.stoploss / self.entry.price) * self.value
+        self.risk = (1 - self.stoploss[0] / self.entry.price) * self.value
         
     def recalc_stoploss(self, new_price: float):
         """Given the current price, recalculate a new stop loss level to preserve profits"""
@@ -166,11 +166,10 @@ class Position:
 
     def __repr__(self):
 
-        REGEX = """Buy %i shares at $%0.2f worth $%0.2f with stop at $%0.2f
-                Risking $%0.2f for %0.2f percent of a $%0.2f portfolio
-
-                Price target = $%0.2f (+%0.2f)
-                """
+        REGEX = ("Buy %i shares at $%0.2f worth $%0.2f with stop at $%0.2f\n"
+                "Risking $%0.2f for %0.2f percent of a $%0.2f portfolio\n"
+                "\n"
+                "Price target = $%0.2f (+%0.2f)\n")
 
         FORMAT = [
             self.shares,
@@ -178,10 +177,10 @@ class Position:
             self.value,
             self.stoploss[0],
             self.risk,
-            self.risk / self.pf.value,
+            self.risk / self.pf.value * 100,
             self.pf.value,
             self.target,
             self.target / self.entry.price
             ]
 
-        return REGEX.format(FORMAT)
+        return REGEX % tuple(FORMAT)
