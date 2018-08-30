@@ -33,8 +33,9 @@ class Entry:
             raise ValueError('must have new_price >= 0')
         return new_price / self.price - 1
 
-    def price_change(self, change: float) -> float:
+    def price_change(self, change: float) -> float: 
         """Given a positive or negative percent change, calculate the new price
+
         Change is given as a decimal percentage. Negative values indicate loss.
         (price=1.00).price_change(-0.25) = 0.75
         """
@@ -148,12 +149,18 @@ class Position:
         self.target = entry.price * (1 + strat.risk_ratio * risk_this_trade)
         self.risk = (1 - self.stoploss[0] / self.entry.price) * self.value
         
-    def recalc_stoploss(self, new_price: float):
-        """Given the current price, recalculate a new stop loss level to preserve profits"""
+    def recalc_stoploss(self, open_price: float) -> float:
+        """Recalculate a stoploss given a next day open """
+        # TODO implement this in strategy class
 
         # New stop set based on Strategy allowed risk and portfolio value
-        new_portfolio_val = pf.value + (1 - price / self.entry_price()) * self.shares()
+        new_value = (open_price / self.entry.price) * self.value
+        new_portfolio_val = self.pf.value + new_value - self.value
+        new_risk = self.strat.risk * new_portfolio_val
+        new_stop = (1 - new_risk / new_value) * open_price
         
+        self.stoploss.append(new_stop)
+        return new_stop
 
     def roi(self, sell_price: float) -> float:
         """Given a return, calculate profits on the investment"""
@@ -180,7 +187,7 @@ class Position:
             self.risk / self.pf.value * 100,
             self.pf.value,
             self.target,
-            self.target / self.entry.price
+            (self.target / self.entry.price - 1) * 100
             ]
 
         return REGEX % tuple(FORMAT)
