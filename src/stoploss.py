@@ -33,7 +33,7 @@ class Entry:
             raise ValueError('must have new_price >= 0')
         return new_price / self.price - 1
 
-    def price_change(self, change: float) -> float: 
+    def price_change(self, change: float) -> float:
         """Given a positive or negative percent change, calculate the new price
 
         Change is given as a decimal percentage. Negative values indicate loss.
@@ -60,7 +60,7 @@ class Strategy:
                         0 < risk <= 1.0
 
         margin_fact     Used to set stoploss according to Entry.support * (1 - margin_fact). Default 0.01
-                    
+
         risk_ratio      The target risk to reward ratio for investments. Default 2.0
                         0 < risk_ratio
 
@@ -94,12 +94,12 @@ class Strategy:
             raise ValueError('must have an entry point')
         return entry.price * (1 - self.risk)
 
-
     def is_ideal_trade(self, entry: Entry) -> bool:
         """Returns true if self.stoploss(entry) >= self.ideal_stoploss(entry)"""
         if not Entry:
             raise ValueError('must have an entry point')
         return self.stoploss(entry) >= self.ideal_stoploss(entry)
+
 
 class Portfolio:
 
@@ -107,6 +107,7 @@ class Portfolio:
         self.value = value
         self.buy_power = buying_power
         self.positions = []
+
 
 class Position:
 
@@ -140,7 +141,7 @@ class Position:
         risk_this_trade = 1 - self.stoploss[-1] / self.entry.price
 
         # Determine an investment such that the portfolio risk agrees with strategy
-        scale = self.strat.risk / risk_this_trade 
+        scale = self.strat.risk / risk_this_trade
         target_pos = self.pf.value * min(scale, self.strat.max_investment)
         target_pos = min(target_pos, pf.buy_power - entry.price / 2)
 
@@ -148,7 +149,7 @@ class Position:
         self.value = self.shares * self.entry.price
         self.target = entry.price * (1 + strat.risk_ratio * risk_this_trade)
         self.risk = (1 - self.stoploss[0] / self.entry.price) * self.value
-        
+
     def recalc_stoploss(self, open_price: float) -> float:
         """Recalculate a stoploss given a next day open """
         # TODO implement this in strategy class
@@ -158,7 +159,7 @@ class Position:
         new_portfolio_val = self.pf.value + new_value - self.value
         new_risk = self.strat.risk * new_portfolio_val
         new_stop = (1 - new_risk / new_value) * open_price
-        
+
         self.stoploss.append(new_stop)
         return new_stop
 
@@ -170,13 +171,22 @@ class Position:
         """Given a sell price, calculate percent growth"""
         return 1 - sell_price / self.entry.price
 
+    def reached_stoploss(self, future_data):
+        """Given a list of (date, low) tuples, determine if stoploss was reached
+        Returns a (date, low) tuple if stoploss was reached, None otherwise
+        """
+        # TODO should this be generalized to reached_price() ?
+        for candle in future_data:
+            if candle[1] <= self.stoploss[0]:
+                return candle
+        return None
 
     def __repr__(self):
 
         REGEX = ("Buy %i shares at $%0.2f worth $%0.2f with stop at $%0.2f\n"
-                "Risking $%0.2f for %0.2f percent of a $%0.2f portfolio\n"
-                "\n"
-                "Price target = $%0.2f (+%0.2f)\n")
+                 "Risking $%0.2f for %0.2f percent of a $%0.2f portfolio\n"
+                 "\n"
+                 "Price target = $%0.2f (+%0.2f)\n")
 
         FORMAT = [
             self.shares,
@@ -188,6 +198,6 @@ class Position:
             self.pf.value,
             self.target,
             (self.target / self.entry.price - 1) * 100
-            ]
+        ]
 
         return REGEX % tuple(FORMAT)
