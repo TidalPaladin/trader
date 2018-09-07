@@ -3,17 +3,18 @@
 author: Scott Chase Waggener
 date:   8/28/18
 """
+import numpy as np
 
-def slope_vector(data: list): -> list:
+
+def slope_vector(data): -> np.ndarray:
     """Given a list of values, return a list of deltas between each value"""
-    if len(data) < 2:
-        raise ValueError('len(data) must be >= 2')
 
     result = []
     for pos in range(len(data)-1):
         delta = data[pos+1] - data[pos]
         result.append(delta)
     return result
+
 
 def calculate_ema(prices: list, periods: int): -> list
     """Calculate exponential moving average of a price set"""
@@ -35,6 +36,7 @@ def calculate_ema(prices: list, periods: int): -> list
     result.remove(0)
     return result
 
+
 def calculate_sma(prices: list, periods: int): -> list
     """Calculate the simple moving average for a price list"""
     if not len(prices):
@@ -48,6 +50,7 @@ def calculate_sma(prices: list, periods: int): -> list
         result.append(new_sum / new_len)
     return result
 
+
 def calculate_vwap(price_list):
     """Calculate volume weighted average price"""
     total_volume = 0
@@ -58,6 +61,7 @@ def calculate_vwap(price_list):
         total_weighted_price += weighted_price total_volume += bar.volume()
 
     return total_weighted_price / total_volume
+
 
 def fib_retrace(low: float, high: float): -> list
     """Given a low and high, calculate fibonacci retracements"""
@@ -91,5 +95,5 @@ def crossover(data: np.array_type, threshold: float, interval=0: int) -> int:
 
     return 0
 
-def slope_crossover():
 
+def slope_crossover():

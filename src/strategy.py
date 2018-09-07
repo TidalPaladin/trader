@@ -59,3 +59,7 @@ class Divergence():
         past trend
         """
         pass
+
+    @staticmethod
+    def divergence(data, study):
+        """Given input features and the values of a study conducted on those features, calculate divergence"""
