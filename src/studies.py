@@ -4,6 +4,9 @@ author: Scott Chase Waggener
 date:   8/28/18
 """
 import numpy as np
+import scipy.signal as sig
+import pandas as pd
+from datetime import datetime
 
 
 def slope_vector(data): - > np.ndarray:
@@ -42,13 +45,10 @@ def calculate_sma(prices: list, periods: int): - > list
     if not len(prices):
         raise ValueError('len(prices) must not be 0')
 
-    # Build a list with running total
-    for price in price_list[1:]:
-        old_avg = result[-1]
-        new_sum = old_avg * len(result) + price
-        new_len = len(result) + 1
-        result.append(new_sum / new_len)
-    return result
+    # Convolve mode='valid' produces better edge behavior
+    MODE = 'valid'
+
+    return
 
 
 def calculate_vwap(price_list):
