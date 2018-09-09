@@ -9,16 +9,6 @@ import pandas as pd
 from datetime import datetime
 
 
-def slope_vector(data): - > np.ndarray:
-    """Given a list of values, return a list of deltas between each value"""
-
-    result = []
-    for pos in range(len(data)-1):
-        delta = data[pos+1] - data[pos]
-        result.append(delta)
-    return result
-
-
 def calculate_ema(prices: list, periods: int): - > list
     """Calculate exponential moving average of a price set"""
     if not len(prices):
@@ -40,15 +30,14 @@ def calculate_ema(prices: list, periods: int): - > list
     return result
 
 
-def calculate_sma(prices: list, periods: int): - > list
+def calculate_sma(data, periods):
     """Calculate the simple moving average for a price list"""
-    if not len(prices):
+    if not len(data):
         raise ValueError('len(prices) must not be 0')
 
     # Convolve mode='valid' produces better edge behavior
     MODE = 'valid'
-
-    return
+    return sig.convolve(data, np.full(periods, 1/periods), mode=MODE)
 
 
 def calculate_vwap(price_list):
