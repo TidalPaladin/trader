@@ -6,7 +6,7 @@ date:   8/28/18
 import numpy as np
 
 
-def slope_vector(data): -> np.ndarray:
+def slope_vector(data): - > np.ndarray:
     """Given a list of values, return a list of deltas between each value"""
 
     result = []
@@ -16,7 +16,7 @@ def slope_vector(data): -> np.ndarray:
     return result
 
 
-def calculate_ema(prices: list, periods: int): -> list
+def calculate_ema(prices: list, periods: int): - > list
     """Calculate exponential moving average of a price set"""
     if not len(prices):
         raise ValueError('len(prices) must not be 0')
@@ -37,7 +37,7 @@ def calculate_ema(prices: list, periods: int): -> list
     return result
 
 
-def calculate_sma(prices: list, periods: int): -> list
+def calculate_sma(prices: list, periods: int): - > list
     """Calculate the simple moving average for a price list"""
     if not len(prices):
         raise ValueError('len(prices) must not be 0')
@@ -63,7 +63,7 @@ def calculate_vwap(price_list):
     return total_weighted_price / total_volume
 
 
-def fib_retrace(low: float, high: float): -> list
+def fib_retrace(low: float, high: float): - > list
     """Given a low and high, calculate fibonacci retracements"""
     if low >= high:
         raise ValueError('low must be < high')
@@ -96,4 +96,22 @@ def crossover(data: np.array_type, threshold: float, interval=0: int) -> int:
     return 0
 
 
-def slope_crossover():
+def peaks(dataframe, **kwargs):
+    """Identify support and resistance levels as extremes where sharp pullback took place.
+    Supply kwargs to match scipy.signal.find_peaks.
+
+    return: tuple(lows, highs)
+    """
+
+    PEAK_KWARGS = {
+        'threshold': 0.00,
+        'width': 2,
+        'prominence': 0.25,
+        'distance': 4
+    }
+
+    PEAK_KWARGS.update(kwargs)
+
+    highs = sig.find_peaks(dataframe.high.values, **PEAK_KWARGS)
+    lows = sig.find_peaks(dataframe.low.values*-1, **PEAK_KWARGS)
+    return tuple(lows, highs)
