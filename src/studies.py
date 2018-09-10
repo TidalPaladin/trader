@@ -6,83 +6,35 @@ date:   8/28/18
 import numpy as np
 import scipy.signal as sig
 import pandas as pd
-from datetime import datetime
 
 
-def calculate_ema(prices: list, periods: int): - > list
+def ema(dataframe, periods, displace=0):
     """Calculate exponential moving average of a price set"""
-    if not len(prices):
-        raise ValueError('len(prices) must not be 0')
-
-    ALPHA = 2 / (periods + 1)
-    result = [prices[0]]
-
-    for price in prices:
-        if price <= 0:
-            raise ValueError('price_list contained a value <= 0')
-
-        prev_ema = result[-1]
-        current_ema = ALPHA * price + (1-ALPHA) * prev_ema
-        result.append(current_ema)
-
-    # Discard unwanted value at index 0
-    result.remove(0)
+    result = dataframe.ewm(span=periods).mean().shift(displace)
+    result.name = "ema(%s, N=%i, D=%i)" % (dataframe.name, periods, displace)
     return result
 
 
-def calculate_sma(data, periods):
+def sma(dataframe, periods):
     """Calculate the simple moving average for a price list"""
-    if not len(data):
-        raise ValueError('len(prices) must not be 0')
 
     # Convolve mode='valid' produces better edge behavior
     MODE = 'valid'
-    return sig.convolve(data, np.full(periods, 1/periods), mode=MODE)
+    return sig.convolve(dataframe.values, np.full(periods, 1/periods), mode=MODE)
 
 
-def calculate_vwap(price_list):
-    """Calculate volume weighted average price"""
-    total_volume = 0
-    total_weighted_price = 0
+def fib_retrace(start, end):
+    """Given a start and end price, calculate fibonacci retracements"""
 
-    for bar in price_list:
-        weighted_price = bar.volume() * bar.lhc3()
-        total_weighted_price += weighted_price total_volume += bar.volume()
-
-    return total_weighted_price / total_volume
+    fib_levels = np.array([0, 0.236, 0.382, 0.5, 0.618, 1.0])
+    return start + fib_levels * (end - start)
 
 
-def fib_retrace(low: float, high: float): - > list
-    """Given a low and high, calculate fibonacci retracements"""
-    if low >= high:
-        raise ValueError('low must be < high')
-
-    fib_levels = [0, 0.236, 0.382, 0.5, 0.618, 1.0]
-    price_range = high - low
-
-    result = []
-    for coeff in fib_levels:
-        price = price_range * coeff + low
-        result.append(price)
-    return result
-
-
-def crossover(data: np.array_type, threshold: float, interval=0: int) -> int:
+def crossover(dataframe, threshold, **kwargs):
     """Tests if a crossover happened in a given interval. Returns index of crossover, or -1"""
 
-    if len(data) is 0:
-        raise ValueError('Data must not be empty')
-    if interval < 0:
-        raise ValueError('Interval must be >= 0')
-
     # Slice points on the interval if one was specified
-    if interval:
-        SLICE_END_INDEX = interval-1
-        data_on_interval = data[:SLICE_END_INDEX:]
-    else:
-        data_on_interval = data
-
-    return 0
+    return None
 
 
 def peaks(dataframe, **kwargs):
@@ -98,9 +50,43 @@ def peaks(dataframe, **kwargs):
         'prominence': 0.25,
         'distance': 4
     }
-
     PEAK_KWARGS.update(kwargs)
 
     highs = sig.find_peaks(dataframe.high.values, **PEAK_KWARGS)
     lows = sig.find_peaks(dataframe.low.values*-1, **PEAK_KWARGS)
-    return tuple(lows, highs)
+
+    data = {
+        'lows': {'values': lows[0], 'props': lows[1]},
+        'highs': {'values': highs[0], 'props': highs[1]}
+    }
+
+    result = pd.DataFrame(data)
+    result.name = 'peaks'
+
+    return result
+
+
+def rs(dataframe):
+    """Calculate the relative strength of a price dataframe"""
+    # Create deltas for prices
+    ups = dataframe.diff()
+    downs = dataframe.diff()
+
+    # Replace np.nan for deltas moving in wrong direction
+    ups[ups < 0] = np.nan
+    downs[downs >= 0] = np.nan
+
+    # Calculate EMA of price ups and downs
+    # Use ignore_na=True
+    ups = ups.ewm(span=14, ignore_na=True).mean()
+    downs = downs.ewm(span=14, ignore_na=True).mean().abs()
+    result = ups / downs
+    result.name = 'rs'
+    return result
+
+
+def rsi(dataframe):
+    """Calculate the relative strength index of a price dataframe"""
+    result = 100 - 100 / (1 + rs(dataframe))
+    result.name = "rsi(%s)" % dataframe.name
+    return result

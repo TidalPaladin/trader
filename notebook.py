@@ -114,6 +114,22 @@ low_coords = np.column_stack((lows[0], df.low.values[lows[0]]))
 plot_chart(df, [], [high_coords, low_coords])
 
 # %%
+# Number of points to include in the moving average
+periods = 180
+
+# 'valid', 'full', 'same' -> valid produces sensible results
+mode = 'valid'
+
+sma = sig.convolve(df.close.values, np.ones(periods) / periods, mode='valid')
+
+# Vectorization is possible so operation can be applied to multidimensional matrices
+#convolve = np.vectorize(np.convolve, signature='(n),(m)->(k)')
+#sma = convolve(df.close.values, np.ones(periods) / periods, mode='valid')
+sma = np.column_stack((np.arange(periods, periods+len(sma)), sma))
+# Plot
+plot_chart(df, [sma], [high_coords, low_coords])
+
+# %%
 periods = 9
 
 
@@ -130,3 +146,20 @@ def get_ema(prices, periods):
 ema = get_ema(df.close.values, periods)
 ema = np.column_stack((np.arange(0, len(ema)), ema))
 plot_chart(df, [ema], [high_coords, low_coords])
+
+# %%
+
+
+def wilders(data):
+    return get_ema(data, 14)
+
+# %%
+
+# Create a vector of deltas between each tick and split by direction
+
+
+delta = np.diff(df.close.values)
+ups = np.array(delta >= 0)
+downs = np.array(delta < 0)
+ups
+downs
