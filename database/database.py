@@ -2,7 +2,6 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, DateTime, Numeric, Boolean
 from sqlalchemy.sql import *
-from sqlalchemy.sql import functions
 import datetime as dt
 import os
 import glob
@@ -47,6 +46,8 @@ history = Table(
     Column('volume', Integer, nullable=True),
 )
 
+DAY_TD = dt.timedelta(1)
+
 
 def connect(user, password, schema, host='127.0.0.1'):
     """Create a connection to the database using connection parameters
@@ -79,6 +80,7 @@ def connect(user, password, schema, host='127.0.0.1'):
 engine = connect('root', 'ChaseBowser1993!', 'trader')
 metadata.create_all(engine)
 
+
 def refresh_oldest(intraday=True):
     """Refresh data for the stocks that are most out of date"""
 
@@ -86,8 +88,15 @@ def refresh_oldest(intraday=True):
     # Select up to IEX max symbols and call refresh_data
     pass
 
+
 def refresh_data(symbols, intraday=True):
-    """Download update data for each symbol in a list"""
+    """Download update data for each symbol in a list
+
+    Args
+    ===
+        symbol : str or list
+    The symbol or list of symbols to retrieve updated data for
+    """
     pass
 
 
@@ -98,7 +107,7 @@ def refresh_data(symbols, intraday=True):
 #     ])
 
 #     query = build_batch_request(symbols, ['chart'], window)
-#     result = 
+#     result =
 #     if len(result) == 0:
 #         continue
 
@@ -110,62 +119,76 @@ def refresh_data(symbols, intraday=True):
 #             continue
 
 
-def get_history(symbol, intraday, period=None, since=None):
-    """Fetch market data for a stock going back as far as a given period. Data
-    is pulled from local database unless.
+def get_history(symbol, period=None, since=None):
+    """
+    Fetch market data for a stock going back as far as a given period. Data
+    is pulled from local database. If updated data is required, see
+    :method refresh_data:
 
-    Args
-    ---
-    symbol : str
-        The stock symbol to query
+    Parameters
+    ===
+        symbol : str or list
+    The symbol or a list of symbols to retrieve
 
-    period : datetime.timedelta
-        Retrieve data going back no further than ``period``
+        period : datetime.timedelta or None
+    Retrieve only data with a consolidation period of ``period``.
+    If not specified, return all consolidation periods.
 
-    since : datetime.datetime
-        Retreive data from ``since`` to now. If ``period`` is also set the
-        result will cover
-
-    intraday : bool
-        If true, only retrieve intraday data. Otherwise retreive daily data
+        since : datetime.datetime or datetime.timedelta or None
+    `datetime` -> get only history from `datetime` or newer.\n
+    `timedelta` -> get history going back `since` from `datetime.now()`.\n
+    If not specified return all available historical data.
 
     Return
-    ---
-    pandas.DataFrame
-        Price data for symbol going back as far as period
+    ===
+        pandas.DataFrame or list(pandas.DataFrame)
+    If `symbol` is `list`, an ordered list of DataFrames with each symbol's history.\n
+    If `symbol` is `str`, a single DataFrame with the symbol's history.\n
+    If `period` not given, DataFrame will have MultiIndex for each consolidation period.
     """
+    if type(symbol) not in [list, str]:
+        raise TypeError("'symbol' must be a string or list")
+    if not len(symbol):
+        raise ValueError("'symbol' must not be empty")
+    if not is_valid_stock(symbol):
+        raise ValueError("symbol %s is not in the database" % symbol)
+    if period and type(period) != dt.timedelta:
+        raise TypeError("'period' must be a datetime.timedelta")
+    if since and type(since) not in [dt.timedelta, dt.datetime, dt.date]:
+        raise TypeError("'since' must be a datetime.datetime")
 
-    # Preconditions
-    # TODO check valid symbol
-    if type(intraday) != bool:
-        raise TypeError('intraday must be a bool')
+    # If a symbol list was given, recurse for each symbol in list
+    if type(symbol) is list:
+        return [get_history(s, period, since) for s in symbol]
 
-    # Build query without date filter
-    query = select([history]).where(
-        history.c.intraday == intraday
+    # Build base query with symbol filter
+    query = select(
+        [history, alias(history.c.end - history.c.start, name='period')]
     ).where(
         history.c.symbol == symbol
     )
 
-    # TODO fix if bot are set
+    # Filter using `since` if set.
+    if since:
+
+        # Convert timedelta to datetime relative to now if needed
+        if type(since) == dt.timedelta:
+            since = (pd.Timestamp.now() - since).round('min')
+
+        query = query.where(history.c.start >= since)
+
+    # Filter using `period` if set.
     if period:
-        since = (pd.Timestamp.now() - period).round('min')
+        query = query.where(history.c.end - history.c.start == period)
 
-
-    query = select([history]).where(
-        history.c.intraday == intraday
-    ).where(
-        history.c.symbol == symbol
-    ).where(
-        history.c.start >= since
-    )
-
-    df = pd.read_sql(query, engine)
+    df = pd.read_sql(query, engine, index_col=['period', 'start'])
+    df = df.drop(columns=['symbol'])
     return df
 
 
-def _get_update_window(symbol: str, intraday: bool=False) -> dt.timedelta:
-    """Retrieve the timedelta between now and the most recent price history in
+def _get_update_window(symbol, ) -> dt.timedelta:
+    """
+    Retrieve the timedelta between now and the most recent price history in
     the local database.
 
     Args
@@ -222,7 +245,8 @@ def _get_update_window(symbol: str, intraday: bool=False) -> dt.timedelta:
 
 
 def parse_raw_to_database(df: pd.DataFrame):
-    """Parse raw chart data from IEX into a standardized form compatible with the
+    """
+    Parse raw chart data from IEX into a standardized form compatible with the
     local database. Does not handle adding of symbol column, this should be done
     previously.
 
@@ -314,47 +338,100 @@ def iex_raw_query(stock_symbol, query_type, timeframe=""):
     # return result
 
 
-def get_last_update(intraday) -> pd.DataFrame:
-    """Get the last update time for each symbol
+def get_time_of_newest(symbols=None, period=None) -> pd.DataFrame:
     """
+    Get the timestamp of the most recent record in the local database for a symbol
+    or list of symbols. Optionally include only records with a given consolidation period.
 
-    max_fn = functions.max(history.c.start, name='latest', identifier='latest')
+    Args
+    ===
+        symbols : str or list
+    The symbol or list of symbols to include in the result.
+    Defaults to all symbols where `is_valid_symbol() == True`
 
-    q1 = select(
-        [security.c.symbol, max_fn]
-    ).where(
-        history.c.intraday == intraday
-    ).group_by(
-        security.c.symbol
-    )
+        period : datetime.timedelta or list
+    A consolidation period or list of such to include in the result.
+    If this is not set, return the time of the single newest record regardless of period.
 
-    q2 = select([security.c.symbol])
+    Return
+    ===
+        pandas.DataFrame:
+    A single DataFrame with column `newest` of `datetime` representing the time of newest record.\n
+    If `period` not specified, result will be indexed by `symbol`.\n
+    If `period` is specified, result will be a `MultiIndex` of `(symbol, period)`
+    """
+    if symbols and type(symbols) not in [str, list]:
+        raise TypeError("'symbols' must be a str or list")
+    if period and type(period) not in [dt.timedelta, list]:
+        raise TypeError("'period' must be a timedelta or list")
 
-    df1 = pd.read_sql(q1, engine, index_col='symbol')
-    df2 = pd.read_sql(q2, engine, index_col='symbol')
-    result = df1.update(df2).fillna(dt.datetime.min)
+    # If single arg given, expand to a list
+    if period and type(period) != list:
+        period = [period]
+    if symbols and type(symbols) != list:
+        symbols = [symbols]
+
+    # Create aggregate function to select the most recent date
+    most_recent_func = func.max(history.c.start).label('newest')
+    delta_t = label('period', history.c.end - history.c.start)
+
+    # Outer join with symbols table to retain symbols with no data
+    join = security.join(history, isouter=True)
+
+    # Create select statement depending on if period agregation is needed
+    if period:
+        query = select(
+            [security.c.symbol, delta_t, most_recent_func]
+        ).select_from(join).group_by(
+            security.c.symbol,
+            delta_t
+        ).where(
+            delta_t.in_(period) | delta_t == None
+        )
+    else:
+        query = select(
+            [security.c.symbol, most_recent_func]
+        ).select_from(join).group_by(
+            security.c.symbol
+        )
+
+    # Create where statement based on symbols
+    if symbols:
+        query = query.where(security.c.symbol.in_(symbols))
+
+    # Create MultiIndex only if more than one period given
+    if period and len(period):
+        index_col = ['symbol', 'period']
+    else:
+        index_col = 'symbol'
+
+    result = pd.read_sql(query, engine, index_col=index_col)
+
+    # Fill NA with a date older than 5 years
+    FILLNA = dt.datetime(2000, 1, 1)
+    result.fillna(FILLNA, inplace=True)
     return result
 
 
-
 def is_valid_stock(symbol: str) -> bool:
-    """Check if the symbol is a valid stock based on the known
+    """
+    Check if the symbol is a valid stock based on the known
     symbols stored in the local database.
 
     Args
-    ---
-    symbol : str
-        The symbol to query
+    ===
+        symbol : str
+    The symbol to query
 
     Return
-    ---
-    bool :
-        True if symbol exists in local database, False otherwise
+    ===
+        bool :
+    `True` if symbol exists in local database, `False` otherwise
 
     Raises
-    ---
-    ValueError:
-        If the local database has no symbol information
+    ===
+        ValueError:
+    If the `security` table of the local database is empty
     """
     if type(symbol) != str:
         raise TypeError('symbol must be a string')
@@ -365,13 +442,14 @@ def is_valid_stock(symbol: str) -> bool:
 
 
 def refresh_symbol_table(path=SYMBOLS_DIR):
-    """Read lists of symbols obtained from NASDAQ as CSV files and
+    """
+    Read lists of symbols obtained from NASDAQ as CSV files and
     insert or update into the database.
 
     Args
     ---
-    path : str
-        The directory to search for CSV files
+        path : str
+    The directory to search for CSV files.
     """
 
     # Build the new symbol table
@@ -399,32 +477,32 @@ def refresh_symbol_table(path=SYMBOLS_DIR):
     pass
 
 
-def build_batch_request(symbols: list, types: list, period: dt.timedelta, last=0) -> str:
+def build_batch_request(symbols, types, period, last=None) -> str:
     """Assemble a batch request given a list of items to query
 
     Args
     ---
-    symbols : list(str)
-        List of stock symbols as strings to query.
+    symbols : str or list(str)
+        Symbol or list of symbols to query
 
-    types : list(str)
-        List of query types as strings, ie 'chart', 'quote'
+    types : str or list(str)
+        Query type or list of query types for IEX
 
     period : str
         Time period to query over as a datetime.timedelta
 
     last : int
-        Return only the last 'last' results. For last==0 return all in range
+        Return only the last 'last' results. By default return all results
 
     Return
     ---
     str:
         The query URL for IEX
     """
-    if type(symbols) != list:
-        raise TypeError('symbols must be a list')
-    if type(types) != list:
-        raise TypeError('types must be a list')
+    if type(symbols) not in [str, list]:
+        raise TypeError('symbols must be a str or list')
+    if type(types) not in [str, list]:
+        raise TypeError('types must be a str or list')
     if type(period) != dt.timedelta:
         raise TypeError('period must be a dt.timedelta')
     if type(last) != int:
@@ -433,8 +511,9 @@ def build_batch_request(symbols: list, types: list, period: dt.timedelta, last=0
         raise ValueError('period must be a positive time delta')
 
     IEX_BATCH = "https://api.iextrading.com/1.0/stock/market/batch?symbols=%s&types=%s&range=%s"
-    symbol_fmt = ','.join(symbols)
-    type_fmt = ','.join(types)
+    symbol_fmt = ','.join(symbols) if type(symbols) is list else symbols
+    type_fmt = ','.join(types) if type(types) is list else types
+
     period = _timedelta_to_iex_period(period)
     result = IEX_BATCH % (symbol_fmt, type_fmt, period)
     if last:
@@ -495,22 +574,23 @@ def _precond_check_str_type(str_name, str_value):
     if not len(str_value):
         raise ValueError(str_name + ' must not be empty')
 
+
 def _read_remote_json(url) -> pd.DataFrame:
     """Wrapper for read_json to allow for debugging"""
     DEBUG = False
-    DEBUG_URL='/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
+    DEBUG_URL = '/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
     url = DEBUG_URL if DEBUG else url
     return pd.read_json(url)
 
 
 def lookup_symbol(symbol):
     """Look up company information by stock symbol
-    
+
     Args
     ---
     symbol : str
         The stock's symbol, case insensitive
-        
+
     Return
     ---
     pandas.Series :
@@ -531,5 +611,8 @@ if __name__ == '__main__':
     b = is_valid_stock('ssc')
     c = is_valid_stock('anus')
     x = lookup_symbol('ssc')
-    r = get_last_update(intraday=True)
+    r2 = get_time_of_newest()
+    r1 = get_time_of_newest(symbols=['ssc', 'ekso'])
+    r = get_time_of_newest(symbols=['ssc', 'ekso'], period=[
+                           dt.timedelta(1), dt.timedelta(2)])
     pass
