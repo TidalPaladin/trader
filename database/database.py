@@ -79,44 +79,52 @@ def connect(user, password, schema, host='127.0.0.1'):
 engine = connect('root', 'ChaseBowser1993!', 'trader')
 metadata.create_all(engine)
 
+def refresh_oldest(intraday=True):
+    """Refresh data for the stocks that are most out of date"""
 
-def refresh_data(symbols, intraday_only=False):
+    # Generate symbol list for most out of date
+    # Select up to IEX max symbols and call refresh_data
+    pass
+
+def refresh_data(symbols, intraday=True):
     """Download update data for each symbol in a list"""
     pass
 
-    # for intraday in [False, True]:
 
-    #     # Query can only have on period, so find the max of all symbols in the request
-    #     window = max([
-    #         _get_update_window(symbol, intraday=intraday)
-    #         for symbol in symbols
-    #     ])
+#     # Query can only have on period, so find the max of all symbols in the request
+#     window = max([
+#         _get_update_window(symbol, intraday=intraday)
+#         for symbol in symbols
+#     ])
 
-    #     query = build_batch_request(symbols, ['chart'], window)
-    #     # query = '/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
-    #     result = pd.read_json(query)
-    #     if len(result) == 0:
-    #         continue
+#     query = build_batch_request(symbols, ['chart'], window)
+#     result = 
+#     if len(result) == 0:
+#         continue
 
-    #     for sym in result.columns:
-    #         single_result = pd.DataFrame(result[sym].iloc[0])
-    #         new_data = parse_raw_to_database(single_result)
-    #         new_data['symbol'] = [sym] * len(new_data)
-    #         if len(new_data) == 0:
-    #             continue
+#     for sym in result.columns:
+#         single_result = pd.DataFrame(result[sym].iloc[0])
+#         new_data = parse_raw_to_database(single_result)
+#         new_data['symbol'] = [sym] * len(new_data)
+#         if len(new_data) == 0:
+#             continue
 
 
-def get_history(symbol, period, intraday):
+def get_history(symbol, intraday, period=None, since=None):
     """Fetch market data for a stock going back as far as a given period. Data
-    is pulled from local database unless force_update=True.
+    is pulled from local database unless.
 
     Args
     ---
     symbol : str
         The stock symbol to query
 
-    period: datetime.timedelta
-        The oldest data to retrieve
+    period : datetime.timedelta
+        Retrieve data going back no further than ``period``
+
+    since : datetime.datetime
+        Retreive data from ``since`` to now. If ``period`` is also set the
+        result will cover
 
     intraday : bool
         If true, only retrieve intraday data. Otherwise retreive daily data
@@ -129,17 +137,27 @@ def get_history(symbol, period, intraday):
 
     # Preconditions
     # TODO check valid symbol
-    if type(intra) != bool:
+    if type(intraday) != bool:
         raise TypeError('intraday must be a bool')
 
-    date_cutoff = (pd.Timestamp.now() - period).round('min')
+    # Build query without date filter
+    query = select([history]).where(
+        history.c.intraday == intraday
+    ).where(
+        history.c.symbol == symbol
+    )
+
+    # TODO fix if bot are set
+    if period:
+        since = (pd.Timestamp.now() - period).round('min')
+
 
     query = select([history]).where(
         history.c.intraday == intraday
     ).where(
         history.c.symbol == symbol
     ).where(
-        history.c.start >= date_cutoff
+        history.c.start >= since
     )
 
     df = pd.read_sql(query, engine)
@@ -167,6 +185,8 @@ def _get_update_window(symbol: str, intraday: bool=False) -> dt.timedelta:
         raise TypeError('symbol must be a str')
     if not is_valid_stock(symbol):
         raise ValueError('symbol %s is not a stock' % symbol)
+
+    _
 
     # query="""select max(i.startTime)
     #     from %s i join history h on i.symbol=h.symbol
@@ -199,47 +219,6 @@ def _get_update_window(symbol: str, intraday: bool=False) -> dt.timedelta:
     #         'intraday' if intraday else 'daily',
     #         subclass
     #     )
-
-
-def _sql_table_merge(table_name: str, df: pd.DataFrame):
-    """Merge data from a dataframe into a SQL table. Data that exists in table
-    and dataframe will be overwritten in table."""
-    pass
-
-    # # Write the dataframe to a temporary table
-    # TEMP = 'temp_pandas'
-    # aligned = _sql_table_align_cols(table_name, df)
-    # aligned.to_sql(TEMP, engine, if_exists='replace', index=False)
-
-    # # Delete overlapping data from destination table and insert new data
-    # engine.execute(
-    #     "delete {0} from {0} inner join {1}".format(table_name, TEMP)
-    # )
-
-    # engine.execute(
-    #     "insert into {0} select * from {1}".format(table_name, TEMP)
-    # )
-
-    # # Drop temp table
-    # engine.execute("drop table %s" % TEMP)
-
-
-def _sql_table_align_cols(table_name: str, df: pd.DataFrame):
-    """Align the ordering of columns in df to match those of table_name"""
-    pass
-
-    # # Read the columns of SQL table into empty dataframe
-    # table = pd.read_sql(
-    #     "select * from %s limit 0" % table_name,
-    #     engine
-    # )
-
-    # if len(df.reset_index().columns) != len(table.columns):
-    #     raise ValueError(
-    #         'table and dataframe have unequal number of columns')
-
-    # result = df.reset_index().reindex(table.columns, axis=1)
-    # return result
 
 
 def parse_raw_to_database(df: pd.DataFrame):
@@ -287,8 +266,7 @@ def parse_raw_to_database(df: pd.DataFrame):
 
     # df = df.drop(columns=DROP_COLS)
 
-    # # To distinguishe intraday and daily, add a stop column
-    # stop = df['date'] + period
+    # # To distinguishe intraday and daily, add a stop column # stop = df['date'] + period
     # df['endTime'] = stop
     # df[TIME_KEY] = df['date']
     # df = df.drop(columns=['date'])
@@ -348,16 +326,15 @@ def get_last_update(intraday) -> pd.DataFrame:
         history.c.intraday == intraday
     ).group_by(
         security.c.symbol
-    ).alias()
-
-    q2 = select([security.c.symbol]).alias()
-
-    query = select([q2.c.symbol, q1]).select_from(
-        q2.join(q1, isouter=True, onclause=q1.c.symbol == q2.c.symbol)
     )
 
-    result = pd.read_sql(query, engine)
+    q2 = select([security.c.symbol])
+
+    df1 = pd.read_sql(q1, engine, index_col='symbol')
+    df2 = pd.read_sql(q2, engine, index_col='symbol')
+    result = df1.update(df2).fillna(dt.datetime.min)
     return result
+
 
 
 def is_valid_stock(symbol: str) -> bool:
@@ -467,12 +444,12 @@ def build_batch_request(symbols: list, types: list, period: dt.timedelta, last=0
 
 
 def _timedelta_to_iex_period(datetime: dt.timedelta) -> str:
-    """Convert a datetime.timedelta into a string that can be passed
+    """Convert a time delta into a string that can be passed
     to the IEX API. Resulting period will be rounded higher if IEX does
     not have the resolution for the exact time delta. If the timedelta exceeds
     the maximum possible for the IEX API, the maximum will be returned.
 
-    The IEX API allows the following values:
+    The IEX API allows the following values::
         5y, 2y, 1y, 6m, 3m, 1m, 1d
 
     All periods are consolidated by the day except for the daily chart,
@@ -486,7 +463,8 @@ def _timedelta_to_iex_period(datetime: dt.timedelta) -> str:
     Return
     ---
     str :
-        A time period that can be used in IEX API calls, rounded up if needed
+        A time period that can be used in IEX API calls, rounded up if needed.
+        Negative deltas will be treated as magnitude
     """
     if type(datetime) != dt.timedelta:
         raise TypeError('datetime must be a datetime.timedelta')
@@ -517,12 +495,31 @@ def _precond_check_str_type(str_name, str_value):
     if not len(str_value):
         raise ValueError(str_name + ' must not be empty')
 
+def _read_remote_json(url) -> pd.DataFrame:
+    """Wrapper for read_json to allow for debugging"""
+    DEBUG = False
+    DEBUG_URL='/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
+    url = DEBUG_URL if DEBUG else url
+    return pd.read_json(url)
+
 
 def lookup_symbol(symbol):
+    """Look up company information by stock symbol
+    
+    Args
+    ---
+    symbol : str
+        The stock's symbol, case insensitive
+        
+    Return
+    ---
+    pandas.Series :
+        The database row with company information for ``symbol``, or None if not found
+    """
     if type(symbol) != str:
         raise TypeError('symbol must be string')
     if not is_valid_stock(symbol):
-        raise ValueError('symbol %s is not valid' % symbol)
+        return None
 
     query = select([security]).where(security.c.symbol == symbol)
     return pd.read_sql(query, engine, index_col='symbol').iloc[0]
