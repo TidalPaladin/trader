@@ -49,12 +49,16 @@ create table history(
 
 create table daily(
     symbol varchar(5) not null,
-    primary key(symbol)
+    startTime datetime not null,
+    endTime datetime not null,
+    primary key(symbol, startTime, endTime)
 );
 
 create table intraday(
     symbol varchar(5) not null,
-    primary key(symbol)
+    startTime datetime not null,
+    endTime datetime not null,
+    primary key(symbol, startTime, endTime)
 );
 
 alter table trendswith add constraint twl
