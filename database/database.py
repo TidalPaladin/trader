@@ -1,618 +1,400 @@
 import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, DateTime, Numeric, Boolean
-from sqlalchemy.sql import *
+from sqlalchemy.sql import label, select, func, delete, insert
 import datetime as dt
 import os
 import glob
 import logging as log
 
-# Simple requests to this URL return JSON data
-IEX_URL_REGEX = "https://api.iextrading.com/1.0/stock/%s/%s/%s"
-IEX_SYMBOL_BATCH_LIMIT = 100
 
-# Sql
-HISTORY = 'history'
-TIME_KEY = 'startTime'
-
-CWD = '/home/tidal/Dropbox/Software/trader/database/'
-SYMBOLS_DIR = os.path.join(CWD, 'symbols')
-SYMBOL_SQL_NAME = 'security'
-
-metadata = MetaData()
-security = Table(
-    'security',
-    metadata,
-    Column('symbol', String(5), primary_key=True),
-    Column('name', String(50)),
-    Column('sector', String(50)),
-    Column('industry', String(50))
-)
-
-history = Table(
-    'history',
-    metadata,
-    Column('symbol', String(5), ForeignKey(
-        'security.symbol'), primary_key=True),
-    Column('start', DateTime, primary_key=True),
-    Column('end', DateTime, primary_key=True),
-    Column('intraday', Boolean),
-    Column('low', Numeric, nullable=True),
-    Column('high', Numeric, nullable=True),
-    Column('open', Numeric, nullable=True),
-    Column('open', Numeric, nullable=True),
-    Column('close', Numeric, nullable=True),
-    Column('vwap', Numeric, nullable=True),
-    Column('volume', Integer, nullable=True),
-)
-
-DAY_TD = dt.timedelta(1)
-
-
-def connect(user, password, schema, host='127.0.0.1'):
-    """Create a connection to the database using connection parameters
-
-    Args
-    ---
-    user : str
-        The username for SQL server
-    password : str
-        The password for SQL server
-    schema : str
-        The database schema name
-    host : str
-        The hostname or address of the server
-
-    Return
-    --
-    sqlalchemy engine
+class Database:
     """
-    return create_engine(
-        'mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(
+    Encapsulates access and manipulation operations for the local MariaDB database
+    into a wrapper. The scope of this class is only those operations which involve
+    retrieval of local data, processing of external data for compatibility with the
+    local database, and manipulation of the database schema.
+    """
+
+    CWD = '/home/tidal/Dropbox/Software/trader/database/'
+    SYMBOLS_DIR = os.path.join(CWD, 'symbols')
+    _metadata = MetaData()
+
+    _security = Table(
+        'security',
+        _metadata,
+        Column('symbol', String(5), primary_key=True),
+        Column('name', String(50)),
+        Column('sector', String(50)),
+        Column('industry', String(50))
+    )
+
+    _history = Table(
+        'history',
+        _metadata,
+        Column('symbol', String(5), ForeignKey(
+            'security.symbol'), primary_key=True),
+        Column('start', DateTime, primary_key=True),
+        Column('end', DateTime, primary_key=True),
+        Column('low', Numeric, nullable=True),
+        Column('high', Numeric, nullable=True),
+        Column('open', Numeric, nullable=True),
+        Column('open', Numeric, nullable=True),
+        Column('close', Numeric, nullable=True),
+        Column('vwap', Numeric, nullable=True),
+        Column('volume', Integer, nullable=True),
+    )
+
+    # Column label for timedelta between end and start
+    _PERIOD = label('period', _history.c.end - _history.c.start)
+
+    def __init__(self, user, password, schema='trader', host='127.0.0.1'):
+        """Create a connection to the database using connection parameters
+
+        Args
+        ---
+        user : str
+            The username for SQL server
+        password : str
+            The password for SQL server
+        schema : str
+            The database schema name
+        host : str
+            The hostname or address of the server
+        """
+
+        path = 'mysql+mysqlconnector://{0}:{1}@{2}/{3}'.format(
             user,
             password,
             host,
             schema
         )
-    )
+        self._engine = create_engine(path)
+        Database._metadata.create_all(self._engine)
 
+    def get_history(self, symbol, period=None, since=None):
+        """
+        Fetch market data for a stock going back as far as a given period. Data
+        is pulled from local database. If updated data is required, see
+        :method refresh_data:
 
-engine = connect('root', 'ChaseBowser1993!', 'trader')
-metadata.create_all(engine)
+        Parameters
+        ===
+            symbol : str or list
+        The symbol or a list of symbols to retrieve
 
+            period : datetime.timedelta or None
+        Retrieve only data with a consolidation period of ``period``.
+        If not specified, return all consolidation periods.
 
-def refresh_oldest(intraday=True):
-    """Refresh data for the stocks that are most out of date"""
+            since : datetime.datetime or datetime.timedelta or None
+        `datetime` -> get only self._history from `datetime` or newer.\n
+        `timedelta` -> get self._history going back `since` from `datetime.now()`.\n
+        If not specified return all available historical data.
 
-    # Generate symbol list for most out of date
-    # Select up to IEX max symbols and call refresh_data
-    pass
+        Return
+        ===
+            pandas.DataFrame or list(pandas.DataFrame)
+        If `symbol` is `list`, an ordered list of DataFrames with each symbol's self._history.\n
+        If `symbol` is `str`, a single DataFrame with the symbol's self._history.\n
+        If `period` not given, DataFrame will have MultiIndex for each consolidation period.
+        """
 
-
-def refresh_data(symbols, intraday=True):
-    """Download update data for each symbol in a list
-
-    Args
-    ===
-        symbol : str or list
-    The symbol or list of symbols to retrieve updated data for
-    """
-    pass
-
-
-#     # Query can only have on period, so find the max of all symbols in the request
-#     window = max([
-#         _get_update_window(symbol, intraday=intraday)
-#         for symbol in symbols
-#     ])
-
-#     query = build_batch_request(symbols, ['chart'], window)
-#     result =
-#     if len(result) == 0:
-#         continue
-
-#     for sym in result.columns:
-#         single_result = pd.DataFrame(result[sym].iloc[0])
-#         new_data = parse_raw_to_database(single_result)
-#         new_data['symbol'] = [sym] * len(new_data)
-#         if len(new_data) == 0:
-#             continue
-
-
-def get_history(symbol, period=None, since=None):
-    """
-    Fetch market data for a stock going back as far as a given period. Data
-    is pulled from local database. If updated data is required, see
-    :method refresh_data:
-
-    Parameters
-    ===
-        symbol : str or list
-    The symbol or a list of symbols to retrieve
-
-        period : datetime.timedelta or None
-    Retrieve only data with a consolidation period of ``period``.
-    If not specified, return all consolidation periods.
-
-        since : datetime.datetime or datetime.timedelta or None
-    `datetime` -> get only history from `datetime` or newer.\n
-    `timedelta` -> get history going back `since` from `datetime.now()`.\n
-    If not specified return all available historical data.
-
-    Return
-    ===
-        pandas.DataFrame or list(pandas.DataFrame)
-    If `symbol` is `list`, an ordered list of DataFrames with each symbol's history.\n
-    If `symbol` is `str`, a single DataFrame with the symbol's history.\n
-    If `period` not given, DataFrame will have MultiIndex for each consolidation period.
-    """
-    if type(symbol) not in [list, str]:
-        raise TypeError("'symbol' must be a string or list")
-    if not len(symbol):
-        raise ValueError("'symbol' must not be empty")
-    if not is_valid_stock(symbol):
-        raise ValueError("symbol %s is not in the database" % symbol)
-    if period and type(period) != dt.timedelta:
-        raise TypeError("'period' must be a datetime.timedelta")
-    if since and type(since) not in [dt.timedelta, dt.datetime, dt.date]:
-        raise TypeError("'since' must be a datetime.datetime")
-
-    # If a symbol list was given, recurse for each symbol in list
-    if type(symbol) is list:
-        return [get_history(s, period, since) for s in symbol]
-
-    # Build base query with symbol filter
-    query = select(
-        [history, alias(history.c.end - history.c.start, name='period')]
-    ).where(
-        history.c.symbol == symbol
-    )
-
-    # Filter using `since` if set.
-    if since:
+        # If a symbol list was given, recurse for each symbol in list
+        if type(symbol) is list:
+            return [self.get_history(s, period, since) for s in symbol]
 
         # Convert timedelta to datetime relative to now if needed
         if type(since) == dt.timedelta:
             since = (pd.Timestamp.now() - since).round('min')
 
-        query = query.where(history.c.start >= since)
-
-    # Filter using `period` if set.
-    if period:
-        query = query.where(history.c.end - history.c.start == period)
-
-    df = pd.read_sql(query, engine, index_col=['period', 'start'])
-    df = df.drop(columns=['symbol'])
-    return df
-
-
-def _get_update_window(symbol, ) -> dt.timedelta:
-    """
-    Retrieve the timedelta between now and the most recent price history in
-    the local database.
-
-    Args
-    ---
-    symbol : str
-        The stock symbol to query
-
-    intraday : bool
-        If true look for the time between last update of intraday data
-
-    Return
-    ---
-    datetime.timedelta:
-        datetime.now() - symbol_history[TIME_KEY].max()
-    """
-    if type(symbol) != str:
-        raise TypeError('symbol must be a str')
-    if not is_valid_stock(symbol):
-        raise ValueError('symbol %s is not a stock' % symbol)
-
-    _
-
-    # query="""select max(i.startTime)
-    #     from %s i join history h on i.symbol=h.symbol
-    #     where i.symbol='%s'"""
-    # table='intraday' if intraday else 'daily'
-    # query=query % (table, symbol)
-
-    # local_data=pd.read_sql_query(query, con = engine)
-
-    # if TIME_KEY:
-    #     # No data found
-    #     return dt.timedelta(28) if intraday else dt.timedelta(365*20)
-    # else:
-    #     if intraday:
-    #         valids=local_data[TIME_KEY].time() != 0
-    #         latest=local_data[TIME_KEY].where(valids).max()
-    #     else:
-    #         latest=local_data[TIME_KEY].max()
-    #         if type(latest) == dt.date:
-    #             latest=dt.datetime.combine(
-    #                 latest, dt.datetime.min.time())
-    #     return latest - dt.datetime.now()
-
-    #     # Merge price data into the superclass table
-    #     _sql_table_merge('history', new_data)
-
-    #     # Merge subclass data into appropriate table
-    #     subclass=new_data[['symbol', 'endTime']]
-    #     _sql_table_merge(
-    #         'intraday' if intraday else 'daily',
-    #         subclass
-    #     )
-
-
-def parse_raw_to_database(df: pd.DataFrame):
-    """
-    Parse raw chart data from IEX into a standardized form compatible with the
-    local database. Does not handle adding of symbol column, this should be done
-    previously.
-
-    Args
-    ---
-    df: pandas.DataFrame
-        The dataframe produced by an IEX API query to process
-
-    Return
-    ---
-    pandas.DataFrame:
-        Columns and indexing adjusted to allow for writing to database
-    """
-    DROP_COLS = set(['change', 'changeOverTime',
-                     'changePercent', 'label', 'unadjustedVolume'])
-
-    # # First clean datetime types
-    # df['date'] = pd.to_datetime(df['date'])
-
-    # # For intraday data, special processing is required
-    # if is_intraday(df):
-
-    #     # Time delta of one minute
-    #     period = dt.timedelta(0, 60)
-
-    #     # Condense date and time into one column
-    #     df['date'] = df['date'] + pd.to_datetime(df['minute'])
-    #     df = df.drop('minute')
-
-    #     # Replace IEX with marketwide data if possible
-    #     KEYWORD = 'market'
-    #     for col in df.columns:
-    #         if col[:len(KEYWORD)] == KEYWORD:
-    #             new_word = col[len(KEYWORD):]
-    #             df[new_word] = df[col]
-    #             df = df.drop(column=col)
-
-    # else:
-    #     # Time delta of one day
-    #     period = dt.timedelta(1)
-
-    # df = df.drop(columns=DROP_COLS)
-
-    # # To distinguishe intraday and daily, add a stop column # stop = df['date'] + period
-    # df['endTime'] = stop
-    # df[TIME_KEY] = df['date']
-    # df = df.drop(columns=['date'])
-
-    # df.set_index(TIME_KEY, inplace=True, drop=True)
-    # df.sort_index(inplace=True)
-
-    # return df
-
-
-def is_intraday(df: pd.DataFrame):
-    return 'minute' in df.columns
-
-
-def iex_raw_query(stock_symbol, query_type, timeframe=""):
-    """
-    Make a raw query to the IEX API, returning a requests object with JSON data
-
-    Paramters
-    ---
-    stock_symbol: string
-        Stock exchange symbol for the stock to query, ie 'AAPL'
-    query_type: string
-        Type of query to be made as allowed by IEX API, ie 'chart' or 'quote'
-    timeframe: string
-        If applicable, the timeframe to query, ie '6m'
-    param_dict: dictionary
-        If desired, a list of key value pairs to be included as parameters with the API call
-    """
-
-    if not is_valid_stock(stock_symbol):
-        raise ValueError('Unknown stock symbol %s' % stock_symbol)
-
-    # # Download the raw JSON data
-    # # debug URL = IEX_URL_REGEX % (stock_symbol, query_type, timeframe)
-    # URL='/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
-    # try:
-    #     result=pd.read_json(URL)
-    # except RuntimeError:
-    #     print('Problem reading data for symbol %s' % stock_symbol)
-    #     return None
-
-    # # Append symbol to each row for database insertion later
-    # result['symbol']=[stock_symbol] * len(result)
-    # return result
-
-
-def get_time_of_newest(symbols=None, period=None) -> pd.DataFrame:
-    """
-    Get the timestamp of the most recent record in the local database for a symbol
-    or list of symbols. Optionally include only records with a given consolidation period.
-
-    Args
-    ===
-        symbols : str or list
-    The symbol or list of symbols to include in the result.
-    Defaults to all symbols where `is_valid_symbol() == True`
-
-        period : datetime.timedelta or list
-    A consolidation period or list of such to include in the result.
-    If this is not set, return the time of the single newest record regardless of period.
-
-    Return
-    ===
-        pandas.DataFrame:
-    A single DataFrame with column `newest` of `datetime` representing the time of newest record.\n
-    If `period` not specified, result will be indexed by `symbol`.\n
-    If `period` is specified, result will be a `MultiIndex` of `(symbol, period)`
-    """
-    if symbols and type(symbols) not in [str, list]:
-        raise TypeError("'symbols' must be a str or list")
-    if period and type(period) not in [dt.timedelta, list]:
-        raise TypeError("'period' must be a timedelta or list")
-
-    # If single arg given, expand to a list
-    if period and type(period) != list:
-        period = [period]
-    if symbols and type(symbols) != list:
-        symbols = [symbols]
-
-    # Create aggregate function to select the most recent date
-    most_recent_func = func.max(history.c.start).label('newest')
-    delta_t = label('period', history.c.end - history.c.start)
-
-    # Outer join with symbols table to retain symbols with no data
-    join = security.join(history, isouter=True)
-
-    # Create select statement depending on if period agregation is needed
-    if period:
+        # Build base query with symbol filter
         query = select(
-            [security.c.symbol, delta_t, most_recent_func]
-        ).select_from(join).group_by(
-            security.c.symbol,
-            delta_t
+            [self._history, self._PERIOD]
         ).where(
-            delta_t.in_(period) | delta_t == None
-        )
-    else:
-        query = select(
-            [security.c.symbol, most_recent_func]
-        ).select_from(join).group_by(
-            security.c.symbol
+            self._history.c.symbol == symbol
         )
 
-    # Create where statement based on symbols
-    if symbols:
-        query = query.where(security.c.symbol.in_(symbols))
+        query = query.where(self._history.c.start >= since)
 
-    # Create MultiIndex only if more than one period given
-    if period and len(period):
-        index_col = ['symbol', 'period']
-    else:
-        index_col = 'symbol'
+        # Filter using `period` if set.
+        if period:
+            query = query.where(self._history.c.end -
+                                self._history.c.start == period)
 
-    result = pd.read_sql(query, engine, index_col=index_col)
+        df = pd.read_sql(query, self._engine, index_col=['period', 'start'])
+        df = df.drop(columns=['symbol'])
+        return df
 
-    # Fill NA with a date older than 5 years
-    FILLNA = dt.datetime(2000, 1, 1)
-    result.fillna(FILLNA, inplace=True)
-    return result
+    def has_symbol(self, symbol: str) -> bool:
+        """
+        Check if the symbol is a valid stock based on the known
+        symbols stored in the local database.
 
+        Args
+        ===
+            symbol : str
+        The symbol to query
 
-def is_valid_stock(symbol: str) -> bool:
-    """
-    Check if the symbol is a valid stock based on the known
-    symbols stored in the local database.
+        Return
+        ===
+            bool :
+        `True` if symbol exists in local database, `False` otherwise
 
-    Args
-    ===
+        Raises
+        ===
+            ValueError:
+        If the `self._security` table of the local database is empty
+        """
+        # TODO ADD VALUEERROR
+        result = self.lookup_symbol(symbol)
+        if type(result) == pd.Series:
+            return not result.empty
+        return False
+
+    def lookup_symbol(self, symbol):
+        """Look up company information by stock symbol
+
+        Args
+        ---
         symbol : str
-    The symbol to query
+            The stock's symbol, case insensitive
 
-    Return
-    ===
-        bool :
-    `True` if symbol exists in local database, `False` otherwise
+        Return
+        ---
+        pandas.Series :
+            The database row with company information for ``symbol``, or None if not found
+        """
+        query = select([self._security]).where(
+            self._security.c.symbol == symbol)
+        result = pd.read_sql(query, self._engine, index_col='symbol')
+        return result.iloc[0] if len(result) else None
 
-    Raises
-    ===
-        ValueError:
-    If the `security` table of the local database is empty
-    """
-    if type(symbol) != str:
-        raise TypeError('symbol must be a string')
-    elif len(symbol) == 0:
-        raise ValueError('symbol must not be empty')
-    query = select((exists().where(security.c.symbol == symbol),))
-    return engine.execute(query).scalar()
+    def execute(self, query):
+        """
+        Execute a query using sqlalchemy
 
+        Args
+        ===
+            query : str or sqlalchemy query
+        The query to execute
 
-def refresh_symbol_table(path=SYMBOLS_DIR):
-    """
-    Read lists of symbols obtained from NASDAQ as CSV files and
-    insert or update into the database.
+        Returns
+        ===
+        The result of the query
+        """
+        return self._engine.execute(query)
 
-    Args
-    ---
-        path : str
-    The directory to search for CSV files.
-    """
+    def dataframe(self, query, *args, **kwargs) -> pd.DataFrame:
+        """
+        Generate a Pandas dataframe from a SQL query
 
-    # Build the new symbol table
-    log.info("Looking for symbols in %s" % path)
-    ALL_FILES = glob.glob(
-        os.path.join(path, "*.csv")
-    )
-    result = pd.concat(
-        (
-            pd.read_csv(
-                f,
-                delimiter=',',
-                usecols=[0, 1, 5, 6],
-                index_col=0
+        Args
+        ===
+            query : str or query
+        The query to execute
+
+        `*args` and `**kwargs` forwarded to DataFrame.read_sql()
+
+        Return
+        ===
+        pandas.DataFrame
+        """
+        return pd.read_sql(query, self._engine, *args, **kwargs)
+
+    def get_time_of_newest(self, symbols=None, period=None) -> pd.DataFrame:
+        """
+        Get the timestamp of the most recent record in the local database for a symbol
+        or list of symbols. Optionally include only records with a given consolidation period.
+
+        Args
+        ===
+            symbols : str or list
+        The symbol or list of symbols to include in the result.
+        Defaults to all symbols where `is_valid_symbol() == True`
+
+            period : datetime.timedelta or list
+        A consolidation period or list of such to include in the result.
+        If this is not set, return the time of the single newest record regardless of period.
+
+        Return
+        ===
+            pandas.DataFrame:
+        A single DataFrame with column `newest` of `datetime` representing the time of newest record.\n
+        If `period` not specified, result will be indexed by `symbol`.\n
+        If `period` is specified, result will be a `MultiIndex` of `(symbol, period)`
+        """
+        # If single arg given, expand to a list
+        if period and type(period) != list:
+            period = [period]
+        if symbols and type(symbols) != list:
+            symbols = [symbols]
+
+        # Create aggregate function to select the most recent date
+        most_recent_func = func.max(self._history.c.start).label('newest')
+        delta_t = label('period', self._history.c.end - self._history.c.start)
+
+        # Outer join with symbols table to retain symbols with no data
+        join = self._security.join(self._history, isouter=True)
+
+        # Create select statement depending on if period agregation is needed
+        if period:
+            query = select(
+                [self._security.c.symbol, delta_t, most_recent_func]
+            ).select_from(join).group_by(
+                self._security.c.symbol,
+                delta_t
+            ).where(
+                delta_t.in_(period) | delta_t == None
             )
-            for f in ALL_FILES
-        ),
-    )
-    result.drop_duplicates(inplace=True)
-    log.info('Imported %i symbols' % len(result))
+        else:
+            query = select(
+                [self._security.c.symbol, most_recent_func]
+            ).select_from(join).group_by(
+                self._security.c.symbol
+            )
 
-    # Clear old data
-    engine.execute(security.delete())
-    result.to_sql('security', engine, if_exists='append')
-    pass
+        # Create where statement based on symbols
+        if symbols:
+            query = query.where(self._security.c.symbol.in_(symbols))
 
+        # Create MultiIndex only if more than one period given
+        if period and len(period):
+            index_col = ['symbol', 'period']
+        else:
+            index_col = 'symbol'
 
-def build_batch_request(symbols, types, period, last=None) -> str:
-    """Assemble a batch request given a list of items to query
+        result = pd.read_sql(query, self._engine, index_col=index_col)
 
-    Args
-    ---
-    symbols : str or list(str)
-        Symbol or list of symbols to query
+        # Fill NA with a date older than 5 years
+        FILLNA = dt.datetime(2000, 1, 1)
+        result.fillna(FILLNA, inplace=True)
+        return result
 
-    types : str or list(str)
-        Query type or list of query types for IEX
+    def refresh_symbol_table(self, path=SYMBOLS_DIR):
+        """
+        Read lists of symbols obtained from NASDAQ as CSV files and
+        insert or update into the database.
 
-    period : str
-        Time period to query over as a datetime.timedelta
+        Args
+        ===
+            path : str
+        The directory to search for CSV files.
 
-    last : int
-        Return only the last 'last' results. By default return all results
+        Returns
+        ===
+            pandas.DataFrame
+        Dataframe assembled from csv files that was inserted into database
+        """
 
-    Return
-    ---
-    str:
-        The query URL for IEX
-    """
-    if type(symbols) not in [str, list]:
-        raise TypeError('symbols must be a str or list')
-    if type(types) not in [str, list]:
-        raise TypeError('types must be a str or list')
-    if type(period) != dt.timedelta:
-        raise TypeError('period must be a dt.timedelta')
-    if type(last) != int:
-        raise TypeError('last must be a int')
-    if period.days < 0:
-        raise ValueError('period must be a positive time delta')
+        # Build the new symbol table
+        log.info("Looking for symbols in %s" % path)
+        ALL_FILES = glob.glob(
+            os.path.join(path, "*.csv")
+        )
+        result = pd.concat(
+            (
+                pd.read_csv(
+                    f,
+                    delimiter=',',
+                    usecols=[0, 1, 5, 6],
+                    index_col=0
+                )
+                for f in ALL_FILES
+            ),
+        )
+        result.drop_duplicates(inplace=True)
+        log.info('Imported %i symbols' % len(result))
 
-    IEX_BATCH = "https://api.iextrading.com/1.0/stock/market/batch?symbols=%s&types=%s&range=%s"
-    symbol_fmt = ','.join(symbols) if type(symbols) is list else symbols
-    type_fmt = ','.join(types) if type(types) is list else types
+        # Clear old data
+        self._engine.execute(self._security.delete())
+        result.to_sql('security', self._engine, if_exists='append')
 
-    period = _timedelta_to_iex_period(period)
-    result = IEX_BATCH % (symbol_fmt, type_fmt, period)
-    if last:
-        result += ("&last=%i" % last)
-    log.debug("Built batch url : %s" % result)
-    return result
+        return result
 
+    def get_columns(self, table) -> pd.Index:
+        """
+        Generate pandas column index that matches that of
+        a table in the local database. Useful for aligning
+        the columns of a dataframe to a local table
 
-def _timedelta_to_iex_period(datetime: dt.timedelta) -> str:
-    """Convert a time delta into a string that can be passed
-    to the IEX API. Resulting period will be rounded higher if IEX does
-    not have the resolution for the exact time delta. If the timedelta exceeds
-    the maximum possible for the IEX API, the maximum will be returned.
+        Args
+        ===
+            table : str
+        The name of the database table to align to
 
-    The IEX API allows the following values::
-        5y, 2y, 1y, 6m, 3m, 1m, 1d
+        Return
+        ===
+            pandas.Index 
+        The columns of the local database table as a flat index
+        """
+        query = "select * from %s limit 0" % table
+        return pd.read_sql(query, self._engine).columns
 
-    All periods are consolidated by the day except for the daily chart,
-    which is by minute.
+    def filter_dataframe(self, table, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove columns from a dataframe that do not appear in a
+        local database table. The supplied dataframe will not be modified
 
-    Args
-    ---
-    datetime : datetime.timedelta
-        Period to be converted to an IEX API compatible string period
+        Args
+        ===
+            table : str
+        The name of the local database table
 
-    Return
-    ---
-    str :
-        A time period that can be used in IEX API calls, rounded up if needed.
-        Negative deltas will be treated as magnitude
-    """
-    if type(datetime) != dt.timedelta:
-        raise TypeError('datetime must be a datetime.timedelta')
+            data : pandas.DataFrame
+        The source data to remove columns from
 
-    # Convert negative deltas to positive
-    datetime = abs(datetime)
-    days = datetime.days
-    if days < 1:
-        return '1d'
-    elif days <= 28:
-        return '1m'
-    elif days <= 90:
-        return '3m'
-    elif days <= 180:
-        return '6m'
-    elif days <= 365:
-        return '1y'
-    elif days <= 365*2:
-        return '2y'
-    else:
-        return '5y'
+        Return
+        ===
+            pandas.DataFrame
+        The columns of `data` that also appear in `table`
+        """
+        # Reset index so all attributes are in column set
+        result = data.reset_index()
+        local = self.get_columns(table)
 
+        result = result.filter(local)
+        if type(data.index) == pd.MultiIndex:
+            new_index = data.index.names
+        else:
+            new_index = data.index.name
 
-def _precond_check_str_type(str_name, str_value):
-    """Check if variable with name str_name with value str_value is a string"""
-    if type(str_value) is not str:
-        raise TypeError(str_name + ' is not of type str')
-    if not len(str_value):
-        raise ValueError(str_name + ' must not be empty')
+        result.set_index(new_index, drop=True, inplace=True)
+        return result
 
+    def merge(self, table, data: pd.DataFrame, align=True):
+        """
+        Merge a dataframe into a table in the local database.
+        Currently, key conflicts are ignored and no replacements
+        are made.
 
-def _read_remote_json(url) -> pd.DataFrame:
-    """Wrapper for read_json to allow for debugging"""
-    DEBUG = False
-    DEBUG_URL = '/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
-    url = DEBUG_URL if DEBUG else url
-    return pd.read_json(url)
+        Args
+        ===
+            table : str
+        The name of the table to insert into
 
+            data : pandas.DataFrame
+        The data to insert
 
-def lookup_symbol(symbol):
-    """Look up company information by stock symbol
+            align : bool
+        If true, align the dataframe to the table before insertion
+        """
 
-    Args
-    ---
-    symbol : str
-        The stock's symbol, case insensitive
+        filtered = self.filter_dataframe(table, data)
 
-    Return
-    ---
-    pandas.Series :
-        The database row with company information for ``symbol``, or None if not found
-    """
-    if type(symbol) != str:
-        raise TypeError('symbol must be string')
-    if not is_valid_stock(symbol):
-        return None
+        # Dump to temp table
+        TEMP_NAME = 'anon_temp_table'
+        filtered.to_sql(TEMP_NAME, self._engine, if_exists='replace')
 
-    query = select([security]).where(security.c.symbol == symbol)
-    return pd.read_sql(query, engine, index_col='symbol').iloc[0]
+        # Merge temp table
+        query = "insert ignore into %s select * from %s" % (
+            table, TEMP_NAME)
+        self.execute(query)
+
+        # Drop temp table
+        self.execute("drop table %s" % TEMP_NAME)
 
 
 if __name__ == '__main__':
-    # update_history(['AAPL'])
-    # refresh_symbol_table()
-    b = is_valid_stock('ssc')
-    c = is_valid_stock('anus')
-    x = lookup_symbol('ssc')
-    r2 = get_time_of_newest()
-    r1 = get_time_of_newest(symbols=['ssc', 'ekso'])
-    r = get_time_of_newest(symbols=['ssc', 'ekso'], period=[
-                           dt.timedelta(1), dt.timedelta(2)])
+
     pass

@@ -1,7 +1,5 @@
-import database as db
+from database import Database
 import unittest
-from datetime import timedelta as td
-import numpy as np
 
 VALID_SYMBOLS = ['AAPL', 'SSC', 'EKSO', 'FB']
 UNLISTED_SYMBOLS = ['ANUS', 'ROPE']
@@ -9,55 +7,90 @@ INVALID_SYMBOLS = ['', '100']
 IEX_BATCH = "https://api.iextrading.com/1.0/stock/market/batch?symbols=%s&types=%s&range=%s"
 
 
-class RequestBuilder(unittest.TestCase):
+class TestThis(unittest.TestCase):
 
-    def test_single_symbol(self):
-        test_type = 'chart'
+    @classmethod
+    def setUpClass(cls):
+        cls.db = Database('root', 'ChaseBowser1993!')
+
+
+class Symbols(TestThis):
+
+    def test_add_symbols(self):
+        result = self.db.refresh_symbol_table()
+        self.assertGreater(len(result), 0)
+        self.assertEquals('symbol', result.index.name.lower())
+
+    def test_has_valids(self):
+        for s in VALID_SYMBOLS:
+            actual = self.db.has_symbol(s)
+            self.assertTrue(actual)
+
+    def test_has_invalids(self):
+        for s in INVALID_SYMBOLS:
+            actual = self.db.has_symbol(s)
+            self.assertFalse(actual)
+
+    def test_lookup_valids(self):
+        for s in VALID_SYMBOLS:
+            actual = self.db.lookup_symbol(s)
+            self.assertEqual(actual.name, s)
+            self.assertIn('name', actual.index.values)
+
+    def test_lookup_invalids(self):
+        for s in INVALID_SYMBOLS:
+            actual = self.db.lookup_symbol(s)
+            self.assertFalse(actual)
+
+
+class UpdateHistory(TestThis):
+
+    def test_result_layout(self):
+        result = self.db.get_time_of_newest(VALID_SYMBOLS)
+        self.assertIn('newest', result.columns)
+        self.assertEqual('symbol', result.index.name)
+        self.assertEqual(len(VALID_SYMBOLS), len(result))
+
         for case in VALID_SYMBOLS:
-            url = db.build_batch_request([case], [test_type], td(3))
-            expected = IEX_BATCH % (case, test_type, '1m')
-            self.assertEquals(expected, url)
+            self.assertIn(case, result.index)
 
-    def test_group_symbol(self):
-        test_type = 'chart'
-        url = db.build_batch_request(VALID_SYMBOLS, [test_type], td(3))
-        expected = IEX_BATCH % (','.join(VALID_SYMBOLS), test_type, '1m')
-        self.assertEquals(expected, url)
-
-    def test_last(self):
-        test_type = 'chart'
-        last = 5
-        url = db.build_batch_request(
-            VALID_SYMBOLS, [test_type], td(3), last=last)
-        new_batch = IEX_BATCH + ("&last=%i" % last)
-        expected = new_batch % (','.join(VALID_SYMBOLS), test_type, '1m')
-        self.assertEquals(expected, url)
+    def test_defaults(self):
+        exp_len = self.db.execute(
+            'select count(*) from security').fetchall()[0][0]
+        result = self.db.get_time_of_newest()
+        self.assertEqual(exp_len, len(result))
 
 
-class TimedeltaConverter(unittest.TestCase):
+class Merge(TestThis):
 
-    def test_simple(self):
-        n = 10
-        cases = {
-            '1d': [td(0, int(x)) for x in np.random.randint(1, 3600*8, n)],
-            '1m': [td(int(x), int(x)) for x in np.random.randint(1, 29, n)],
-            '3m': [td(int(x), int(x)) for x in np.random.randint(29, 91, n)],
-            '6m': [td(int(x), int(x)) for x in np.random.randint(91, 181, n)],
-            '1y': [td(int(x), int(x)) for x in np.random.randint(181, 366, n)],
-            '2y': [td(int(x), int(x)) for x in np.random.randint(366, 366*2+1, n)],
-            '5y': [td(int(x), int(x)) for x in np.random.randint(366*2+1, 1024, n)],
-        }
+    def test_filter(self):
 
-        for k, vals in cases.items():
-            for v in vals:
-                self.assertEquals(k, db._timedelta_to_iex_period(v), msg=k)
+        df1 = self.db.dataframe('select * from history',
+                                index_col=['symbol', 'start', 'end'])
+        df2 = self.db.dataframe('select * from history', index_col='symbol')
+        df1['junk'] = df1['low']
+        df1['JUNK'] = df1['low']
 
-    def test_edge(self):
-        cases = {
-            '1d': [td(0, 0), td(0, -260)],
-            '5y': [td(365*10)]
-        }
+        result1 = self.db.filter_dataframe('history', df1)
+        result2 = self.db.filter_dataframe('history', df2)
 
-        for k, vals in cases.items():
-            for v in vals:
-                self.assertEquals(k, db._timedelta_to_iex_period(v), msg=k)
+        self.assertIn('junk', df1.columns)
+        self.assertIn('JUNK', df1.columns)
+
+        self.assertNotIn('junk', result1.columns)
+        self.assertNotIn('JUNK', result1.columns)
+        self.assertNotIn('junk', result2.columns)
+        self.assertNotIn('JUNK', result2.columns)
+
+        self.assertEqual(df1.index.names, result1.index.names)
+        self.assertEqual(df2.index.name, result2.index.name)
+
+    def test_merge(self):
+
+        df1 = self.db.dataframe('select * from history',
+                                index_col=['symbol', 'start', 'end'])
+        df2 = self.db.dataframe('select * from history', index_col='symbol')
+        df1['junk'] = df1['low']
+        df1['JUNK'] = df1['low']
+
+        self.db.merge('history', df1)
