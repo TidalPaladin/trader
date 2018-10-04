@@ -18,6 +18,12 @@ class Database:
 
     CWD = '/home/tidal/Dropbox/Software/trader/database/'
     SYMBOLS_DIR = os.path.join(CWD, 'symbols')
+
+    class Price(Numeric):
+
+        def __init__(self):
+            super().__init__(10, 2)
+
     _metadata = MetaData()
 
     _security = Table(
@@ -36,12 +42,12 @@ class Database:
             'security.symbol'), primary_key=True),
         Column('start', DateTime, primary_key=True),
         Column('end', DateTime, primary_key=True),
-        Column('low', Numeric, nullable=True),
-        Column('high', Numeric, nullable=True),
-        Column('open', Numeric, nullable=True),
-        Column('open', Numeric, nullable=True),
-        Column('close', Numeric, nullable=True),
-        Column('vwap', Numeric, nullable=True),
+        Column('low', Price, nullable=True),
+        Column('high', Price, nullable=True),
+        Column('open', Price, nullable=True),
+        Column('open', Price, nullable=True),
+        Column('close', Price, nullable=True),
+        Column('vwap', Price, nullable=True),
         Column('volume', Integer, nullable=True),
     )
 
@@ -110,20 +116,21 @@ class Database:
 
         # Build base query with symbol filter
         query = select(
-            [self._history, self._PERIOD]
+            [self._history]
         ).where(
             self._history.c.symbol == symbol
         )
 
-        query = query.where(self._history.c.start >= since)
+        if since:
+            query = query.where(self._history.c.start >= since)
 
         # Filter using `period` if set.
         if period:
             query = query.where(self._history.c.end -
                                 self._history.c.start == period)
 
-        df = pd.read_sql(query, self._engine, index_col=['period', 'start'])
-        df = df.drop(columns=['symbol'])
+        df = pd.read_sql(query, self._engine, index_col=[
+                         'symbol', 'start', 'end'])
         return df
 
     def has_symbol(self, symbol: str) -> bool:
@@ -325,7 +332,7 @@ class Database:
 
         Return
         ===
-            pandas.Index 
+            pandas.Index
         The columns of the local database table as a flat index
         """
         query = "select * from %s limit 0" % table
@@ -382,9 +389,14 @@ class Database:
 
         filtered = self.filter_dataframe(table, data)
 
-        # Dump to temp table
         TEMP_NAME = 'anon_temp_table'
-        filtered.to_sql(TEMP_NAME, self._engine, if_exists='replace')
+        temp_table = Table(TEMP_NAME, self._metadata)
+        for column in self._history.columns:
+            temp_table.append_column(column.copy())
+        temp_table.drop(self._engine, checkfirst=True)
+        temp_table.create(self._engine)
+
+        filtered.to_sql(TEMP_NAME, self._engine, if_exists='append')
 
         # Merge temp table
         query = "insert ignore into %s select * from %s" % (
@@ -397,4 +409,5 @@ class Database:
 
 if __name__ == '__main__':
 
+    db = Database('root', 'ChaseBowser1993!')
     pass

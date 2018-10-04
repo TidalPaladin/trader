@@ -1,4 +1,6 @@
 from database import Database
+from interface import IexDownloader, Downloader
+from datetime import datetime, timedelta
 import unittest
 
 VALID_SYMBOLS = ['AAPL', 'SSC', 'EKSO', 'FB']
@@ -63,6 +65,7 @@ class UpdateHistory(TestThis):
 
 class Merge(TestThis):
 
+    @unittest.skip('none')
     def test_filter(self):
 
         df1 = self.db.dataframe('select * from history',
@@ -85,6 +88,7 @@ class Merge(TestThis):
         self.assertEqual(df1.index.names, result1.index.names)
         self.assertEqual(df2.index.name, result2.index.name)
 
+    @unittest.skip('none')
     def test_merge(self):
 
         df1 = self.db.dataframe('select * from history',
@@ -94,3 +98,27 @@ class Merge(TestThis):
         df1['JUNK'] = df1['low']
 
         self.db.merge('history', df1)
+
+    def test_merge_dl(self):
+
+        debug1 = '/home/tidal/Dropbox/Software/trader/data/tsla-6m.json'
+        debug2 = '/home/tidal/Dropbox/Software/trader/data/aapl-6m.json'
+
+        dl = IexDownloader('AAPL', timedelta(1), timedelta(25), url=debug2)
+        dl.run()
+        result = dl.result()
+        self.db.merge('history', result)
+
+        dl = IexDownloader('TSLA', timedelta(1), timedelta(25), url=debug1)
+        dl.run()
+        result = dl.result()
+        self.db.merge('history', result)
+
+        self.assertTrue(True)
+
+
+class GetData(TestThis):
+
+    def test_simple(self):
+        result = self.db.get_history('AAPL')
+        self.assertTrue(True)

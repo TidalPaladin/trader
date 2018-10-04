@@ -27,51 +27,39 @@ def merge_datetime(df, label, date, time=None) -> pd.DataFrame:
 
 class Downloader():
 
-    def refresh_oldest(older_than, max_num):
-        """
-        Refresh data for the stocks that are most out of date, writing
-        the updated data to the local database.
-
-        Args
-        ===
-            older_than : datetime.timedelta
-        Only symbols last updated after `older_than` will be updated.
-
-            max : int
-        Only process the `max` oldest symbols. Defaults to the IEX maximum
-        per batch request.
-        """
-
-        # Generate symbol list for most out of date
-        # Select up to IEX max symbols and call refresh_data
-        pass
-
-    def refresh_data(symbols):
-        """Download update data for each symbol in a list
-
-        Args
-        ===
-            symbol : str or list
-        The symbol or list of symbols to retrieve updated data for
-        """
-
-        if type(symbols) not in [str, list]:
-            raise TypeError("'symbols' must be a str or list")
-        if not symbols:
-            raise ValueError("'symbols' is required")
-        if type(symbols) == str:
+    def __init__(self, symbols, period, since, last=None):
+        # Preprocess args
+        if type(period) == dt.timedelta:
+            period = abs(period)
+        if type(symbols) != list:
             symbols = [symbols]
 
-        # Search local database to find most recent data
-        local_list = get_time_of_newest(symbols)
+        self._period = period
+        self._symbols = symbols
+        self._since = since
+        self._last = last
 
-        # Map each to how out of date it is
-        delta = local_list['newest'].apply(lambda x: dt.datetime.now() - x)
-        max_outdated = delta.max()
+    def run(self):
+        raise NotImplementedError
 
-        data: pd.DataFrame = _refresh_from_iex(symbols, max_outdated)
-        data.to_sql('history', engine, if_exists='append')
-        return data
+    def raw(self):
+        raise NotImplementedError
+
+    def result(self):
+        """Retrieve the result"""
+        raise NotImplementedError
+
+    @property
+    def symbols(self):
+        return self._symbols
+
+    @property
+    def period(self):
+        return self._period
+
+    @property
+    def since(self):
+        return self._since
 
 
 class IexDownloader(Downloader):
@@ -85,42 +73,45 @@ class IexDownloader(Downloader):
     # IEX only has daily or minute
     IEX_PERIODS = [dt.timedelta(1), dt.timedelta(0, 60)]
 
-    def __init__(self, symbols, period, since, last=None):
+    def __init__(self, symbols, period, since, last=None, url=None):
+        """Optionally specify URL to override"""
+        super().__init__(symbols, period, since, last)
+        if url:
+            self._debug_url = url
 
-        # Preprocess args
-        if type(period) == dt.timedelta
-            period = abs(period)
-            period = self.to_period(period)
-        if type(symbols) != list:
-            symbols = [symbols]
+    def run(self):
+        """ run the download"""
 
-        symbol_fmt = ','.join(symbols) if type(symbols) is list else symbols
+        if len(self._symbols) > 1:
+            self._batch_query()
+        else:
+            self._single_query()
+
+    def _batch_query(self):
+        symbol_fmt = ','.join(self._symbols)
         type_fmt = 'chart'
-        #type_fmt = ','.join(types) if type(types) is list else types
+        url = self.IEX_BATCH % (symbol_fmt, type_fmt, self._period)
 
-        url = IEX_BATCH % (symbol_fmt, type_fmt, period)
-        if last:
-            url += ("&last=%i" % last)
-
-        self._df = pd.read_json(url)
-        self._url = url
-
-    def _batch_query(self, symbol, period, since, last)
-        symbol_fmt = ','.join(symbols) if type(symbols) is list else symbols
-        type_fmt = 'chart'
-        #type_fmt = ','.join(types) if type(types) is list else types
-
-        url = IEX_BATCH % (symbol_fmt, type_fmt, period)
-        if last:
-            url += ("&last=%i" % last)
-        self._url = url
+        if self._last:
+            url += ("&last=%i" % self._last)
 
         # Batch result is a dataframe of jsons
+        self._url = url
+        if self._debug_url:
+            url = self._debug_url
         self._df = [pd.read_json(s) for s in pd.read_json(url)]
 
-    def _single_query(self, symbol, period, since, last):
+    def _single_query(self):
 
-        pass
+        assert(len(self._symbols) == 1)
+
+        url = self.IEX_URL_REGEX % (
+            self._symbols[0], 'chart', self._period)
+
+        self._url = url
+        if self._debug_url:
+            url = self._debug_url
+        self._df = [pd.read_json(url)]
 
     @property
     def raw(self):
@@ -130,7 +121,6 @@ class IexDownloader(Downloader):
     def url(self):
         return self._url
 
-    @property
     def result(self):
         """
         Parse raw chart data from IEX into a standardized form compatible with the
@@ -148,27 +138,36 @@ class IexDownloader(Downloader):
             Columns and indexing adjusted to allow for writing to database
         """
 
-        # # For intraday data, special processing is required
-        # if self.intraday:
-        #     period = MINUTE
-        #     df = merge_datetime(df, 'start', 'date', 'minute')
+        result = pd.concat(
+            [self._parse(df, symb)
+             for df, symb in zip(self._df, self._symbols)]
+        )
+        result.sort_index(inplace=True)
+        return result
 
-        #     # Replace IEX with marketwide data if possible
-        #     KEYWORD = 'market'
-        #     for col in df.columns:
-        #         if col[:len(KEYWORD)] == KEYWORD:
-        #             new_word = col[len(KEYWORD):]
-        #             df[new_word] = df[col]
-        #             df = df.drop(column=col)
-        # else:
+    def _parse(self, df, symbol):
+            # # For intraday data, special processing is required
+            # if self.intraday:
+            #     period = MINUTE
+            #     df = merge_datetime(df, 'start', 'date', 'minute')
+
+            #     # Replace IEX with marketwide data if possible
+            #     KEYWORD = 'market'
+            #     for col in df.columns:
+            #         if col[:len(KEYWORD)] == KEYWORD:
+            #             new_word = col[len(KEYWORD):]
+            #             df[new_word] = df[col]
+            #             df = df.drop(column=col)
+            # else:
         df = merge_datetime(df, 'start', 'date')
         period = dt.timedelta(1)
 
         # To distinguishe intraday and daily, add a stop column # stop = df['date'] + period
-        df['stop'] = df['start'] + period
+        df['end'] = df['start'] + period
+        df['symbol'] = symbol
 
-        df.set_index('start', inplace=True, drop=True)
-        df.sort_index(inplace=True)
+        new_index = ['symbol', 'start', 'end']
+        df.set_index(new_index, inplace=True, drop=True)
         return df
 
     @staticmethod
@@ -213,6 +212,57 @@ class IexDownloader(Downloader):
             return '2y'
         else:
             return '5y'
+
+
+def refresh_oldest(older_than, max_num):
+    """
+    Refresh data for the stocks that are most out of date, writing
+    the updated data to the local database.
+
+    Args
+    ===
+        older_than : datetime.timedelta
+    Only symbols last updated after `older_than` will be updated.
+
+        max : int
+    Only process the `max` oldest symbols. Defaults to the IEX maximum
+    per batch request.
+    """
+
+    # Generate symbol list for most out of date
+    # Select up to IEX max symbols and call refresh_data
+    pass
+
+
+def refresh_data(symbols):
+    """Download update data for each symbol in a list
+
+    Args
+    ===
+        symbol : str or list
+    The symbol or list of symbols to retrieve updated data for
+    """
+
+    """
+    if type(symbols) not in [str, list]:
+        raise TypeError("'symbols' must be a str or list")
+    if not symbols:
+        raise ValueError("'symbols' is required")
+    if type(symbols) == str:
+        symbols = [symbols]
+
+    # Search local database to find most recent data
+    local_list = get_time_of_newest(symbols)
+
+    # Map each to how out of date it is
+    delta = local_list['newest'].apply(lambda x: dt.datetime.now() - x)
+    max_outdated = delta.max()
+
+    data: pd.DataFrame = _refresh_from_iex(symbols, max_outdated)
+    data.to_sql('history', engine, if_exists='append')
+    return data
+    """
+    pass
 
 
 if __name__ == '__main__':
