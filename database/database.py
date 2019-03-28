@@ -6,6 +6,7 @@ import datetime as dt
 import os
 import glob
 import logging as log
+from pandas_datareader import nasdaq
 
 
 class Database:
@@ -20,12 +21,16 @@ class Database:
     SYMBOLS_DIR = os.path.join(CWD, 'symbols')
 
     class Price(Numeric):
+        """Represents a price data type for the SQL database"""
 
         def __init__(self):
-            super().__init__(10, 2)
+            digits = 10
+            decimals = 4
+            super().__init__(10, 4)
 
     _metadata = MetaData()
 
+    # Holds data about ticker symbols
     _security = Table(
         'security',
         _metadata,
@@ -35,6 +40,7 @@ class Database:
         Column('industry', String(50))
     )
 
+    # Holds historical data
     _history = Table(
         'history',
         _metadata,
@@ -130,7 +136,7 @@ class Database:
                                 self._history.c.start == period)
 
         df = pd.read_sql(query, self._engine, index_col=[
-                         'symbol', 'start', 'end'])
+                         'start', 'end'])
         return df
 
     def has_symbol(self, symbol: str) -> bool:
@@ -278,40 +284,85 @@ class Database:
         result.fillna(FILLNA, inplace=True)
         return result
 
-    def refresh_symbol_table(self, path=SYMBOLS_DIR):
+    def get_most_outdated(self, num=None, symbols=None, period=None) -> pd.DataFrame:
+        """
+        Retreive the symbol and date of last update for symbols having the most out of date data.
+        The result will be sorted with the most out of date records appearing at the top.
+
+
+        Args
+        ===
+            num : int
+        Retrieve only the `num` most outdated symbols. By default retrieve all symbols.
+
+            symbols : str or list
+        The symbol or list of symbols to include in the result.
+        Defaults to all symbols where `is_valid_symbol() == True`
+
+            period : datetime.timedelta or list
+        A consolidation period or list of such to include in the result.
+        If this is not set, return the time of the single newest record regardless of period.
+
+        Return
+        ===
+            pandas.DataFrame:
+        A single DataFrame with column `newest` of `datetime` representing the time of newest record.\n
+        If `period` not specified, result will be indexed by `symbol`.\n
+        If `period` is specified, result will be a `MultiIndex` of `(symbol, period)`\n
+
+        Result is sorted with most outdated records appearing first.
+        """
+
+        last_update = self.get_time_of_newest(symbols, period)
+        last_update.sort_values('newest', inplace=True)
+
+        if num and num < len(last_update):
+            return last_update.iloc[:num]
+        else:
+            return last_update
+
+    def refresh_symbol_table(self, path=None, web=None):
         """
         Read lists of symbols obtained from NASDAQ as CSV files and
-        insert or update into the database.
+        insert or update into the database. One of `path`, `web` must be
+        supplied.
 
         Args
         ===
             path : str
-        The directory to search for CSV files.
+        If supplied, a directory to search for CSV files with ticker symbols
+
+            web : bool
+        If true, use `pandas_datareader` to query NASDAQ for symbol data
 
         Returns
         ===
             pandas.DataFrame
         Dataframe assembled from csv files that was inserted into database
         """
+        if type(path) == None and type(web) == None:
+            raise ValueError('one of path or web must be supplied')
 
-        # Build the new symbol table
-        log.info("Looking for symbols in %s" % path)
-        ALL_FILES = glob.glob(
-            os.path.join(path, "*.csv")
-        )
-        result = pd.concat(
-            (
-                pd.read_csv(
-                    f,
-                    delimiter=',',
-                    usecols=[0, 1, 5, 6],
-                    index_col=0
-                )
-                for f in ALL_FILES
-            ),
-        )
+        if path:
+            ALL_FILES = glob.glob(
+                os.path.join(path, "*.csv")
+            )
+            result = pd.concat(
+                (
+                    pd.read_csv(
+                        f,
+                        delimiter=',',
+                        usecols=[0, 1, 5, 6],
+                        index_col=0
+                    )
+                    for f in ALL_FILES
+                ),
+            )
+        elif web:
+            # Read using pandas_datareader
+            pass
+
         result.drop_duplicates(inplace=True)
-        log.info('Imported %i symbols' % len(result))
 
         # Clear old data
         self._engine.execute(self._security.delete())
@@ -406,8 +457,9 @@ class Database:
         # Drop temp table
         self.execute("drop table %s" % TEMP_NAME)
 
-
 if __name__ == '__main__':
 
     db = Database('root', 'ChaseBowser1993!')
-    pass
+    i = db.get_most_outdated(5)
+    print(i)
+    x = 0

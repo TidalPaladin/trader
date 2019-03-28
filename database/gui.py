@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import mpl_finance as fin
 from datetime import datetime
+from database import Database
 
 
 class Chart:
@@ -12,9 +13,9 @@ class Chart:
 
         Args
         ---
-        dataframe (pandas.Dataframe): 
+        dataframe (pandas.Dataframe):
             Dataframe with {high, low, open, close, volume}
-        size (tuple): 
+        size (tuple):
             Resize the plot to (x, y)
 
 
@@ -22,67 +23,40 @@ class Chart:
         self._size = size
         self._data = dataframe
         self._axis = plt.subplot()
-
-        self._annotations = pd.DataFrame(
-            columns=['price', 'time', ]
-        )
-
-    @property
-    def annotations(self):
-        return self._annotations
-
-    def price_level(self, price, color='r'):
-        pass
-
-    def time_level(self, price, color='r'):
-        pass
+        self._data = dataframe
 
     def plot(self, out_file=None, *args, **kwargs):
         # Adjust scaling and plot candlesticks
-        plt.rcParams["figure.figsize"] = self.size
+        plt.rcParams["figure.figsize"] = self._size
 
         fin.candlestick2_ohlc(
             self._axis,
-            self._data.open.values,
-            self._data.high.values,
-            self._data.low.values,
-            self._data.close.values,
-            width=1,
+            self._data.open,
+            self._data.high,
+            self._data.low,
+            self._data.close,
+            width=0.9,
             colorup='g',
             colordown='r',
-            alpha=0.75
+            alpha=1.0
         )
 
-    def add_study(self, method, args, pos=0, type ** kwargs):
-        """Add a study to the chart"""
+#        fin.index_bar(
+#            self._axis,
+#            self._data.volume.values,
+#            width=1,
+#            facecolor='r'
+#        )
 
-    def show(self):
-        """Show this chart"""
+        if not out_file:
+            plt.show()
 
-        # Adjust scaling and plot candlesticks
-        plt.rcParams["figure.figsize"] = self.size
-        ax = plt.subplot()
 
-    def _volume(self, axis):
-        fin.index_bar(axis,
-                      self.data.volume.values,
-                      width=1)
+if __name__ == '__main__':
 
-    def _plot_study(self, name, style):
-        if style not in ['line', 'scatter']:
-            raise ValueError('style not in [line, scatter]')
+    db = Database('root', 'ChaseBowser1993!')
 
-    def snapshot(self, pos):
-        """Return a snapshot of values at a given time in the chart
-
-        Args
-        ---
-        pos:
-            Index at which to take the snapshot
-
-        Return
-        ---
-        ret (pandas.Dataframe): 
-            Dataframe with market data and active study values at the given index
-        """
-        return self.data.iloc[pos]
+    data = db.get_history('TSLA', since=datetime(2018, 5, 1))
+    chart = Chart(data)
+    chart.plot()
+    x = 0
