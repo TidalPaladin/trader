@@ -1,0 +1,53 @@
+\usepackage{graphicx}
+\usepackage{forest}
+\usepackage{mathtools}
+\usepackage{tikz, ifthen, etoolbox}
+\usepackage{float}
+\usepackage{cubes}
+\usetikzlibrary{positioning, decorations.pathreplacing, calc, fit}
+
+\newcommand{\cnnlayer}[1]{
+	\tikzcuboid{
+			densityx=1,%
+			densityy=1,%
+			densityz=1,%
+			dimx=3,%
+			dimy=5,%
+			dimz=5,%
+			front/.style={draw=black!75!black,fill=blue!25!white},%
+			right/.style={draw=black!25!black,fill=blue!75!white},%
+			top/.style={draw=black!50!black,fill=blue!50!white},%
+			scalex=0.5,%
+			scaley=1,%
+			scalez=0.5,%
+			emphedge=false,%
+			shade,%
+			shadeopacity=0.15,%
+			#1
+	}
+}
+
+\newcommand{\veclayer}[1]{
+	\tikzcuboid{
+			densityx=1,%
+			densityy=2,%
+			densityz=1,%
+			dimx=1,%
+			dimy=10,%
+			dimz=1,%
+			front/.style={draw=black!75!black,fill=blue!25!white},%
+			right/.style={draw=black!25!black,fill=blue!75!white},%
+			top/.style={draw=black!50!black,fill=blue!50!white},%
+			scalex=0.5,%
+			scaley=1,%
+			scalez=0.35,%
+			emphedge=false,%
+			shade,%
+			shadeopacity=0.15,%
+			#1
+	}
+}
+
+
+
+\makeatother
