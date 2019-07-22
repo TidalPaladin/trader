@@ -33,3 +33,35 @@ class HasWindow(Params):
 
     def getWindow(self):
         return self.getOrDefault(self.window)
+
+class HasNumerator(Params):
+    """
+    Mixin for param metric: Window
+    """
+
+    numerator = Param(Params._dummy(), "numerator", "Numerator")
+
+    def __init__(self):
+        super(HasNumerator, self).__init__()
+
+    def setWindow(self, value):
+        return self._set(numerator=value)
+
+    def getWindow(self):
+        return self.getOrDefault(self.numerator)
+
+class HasDenominator(Params):
+    """
+    Mixin for param metric: Window
+    """
+
+    denominator = Param(Params._dummy(), "denominator", "Denominator")
+
+    def __init__(self):
+        super(HasDenominator, self).__init__()
+
+    def setWindow(self, value):
+        return self._set(denominator=value)
+
+    def getWindow(self):
+        return self.getOrDefault(self.denominator)

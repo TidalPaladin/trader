@@ -59,39 +59,24 @@ class Windower(UnaryTransformer, HasWindow):
         window = self.getWindow()
         return dataset.withColumn(out_col, collect_list(in_col).over(window))
 
-class PriceRescaler(Transformer):
+class RelativeScaler(UnaryTransformer, HasNumerator, HasDenominator):
 
     @keyword_only
-    def __init__(self):
-        super(PriceRescaler, self).__init__()
+    def __init__(self, inputCol=None, outputCol=None, numerator=None, denominator=None):
+        super(RelativeScaler, self).__init__()
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self):
+    def setParams(self, inputCol=None, outputCol=None, numerator=None, denominator=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
     def _transform(self, dataset):
-        ratio = col('adjclose') / col('close')
-
-        adj_high = ratio * col('high')
-        adj_low = ratio * col('low')
-        adj_open = ratio * col('open')
-
-        out_type = MoneyType
-
-        result = dataset \
-            .withColumn("adjlow",  adj_low.cast(out_type)) \
-            .withColumn("adjhigh",  adj_high.cast(out_type)) \
-            .withColumn("adjopen",  adj_open.cast(out_type)) \
-            .drop('low', 'high', 'open', 'close') \
-            .withColumnRenamed('adjlow', 'low') \
-            .withColumnRenamed('adjhigh', 'high') \
-            .withColumnRenamed('adjopen', 'open') \
-            .withColumnRenamed('adjclose', 'close')
-
-        return result
+        in_col, out_col = self.getInputCol(), self.getOutputCol()
+        numerator, denominator = self.getNumerator(), self.getDenominator()
+        ratio = col(numerator) / col(denominator)
+        return dataset.withColumn(out_col, ratio * col(in_col))
 
 class FuturePriceExtractor(Transformer, HasOutputCol, HasWindow):
     """

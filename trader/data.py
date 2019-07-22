@@ -7,7 +7,7 @@ from pyspark.ml.feature import Bucketizer, StandardScaler
 import os
 
 from pyspark.ml.pipeline import Transformer, Pipeline
-from pipeline import PriceRescaler, FuturePriceExtractor, PastStandardizer, FeatureExtractor
+from pipeline import FuturePriceExtractor, PastStandardizer, FeatureExtractor, RelativeScaler
 
 from pipeline import StockDL, StockDLModel
 
@@ -51,7 +51,12 @@ if __name__ == '__main__':
         .partitionBy("symbol") \
         .rowsBetween(-PAST_WINDOW_SIZE+1, 0)
 
-    rescaler = PriceRescaler()
+    rescale_in = ['high', 'low', 'open']
+    rescale_out = ['scaled_' + c for c in rescale_in]
+    rescalers = [
+            PriceRescaler(inputCol=i, outputCol=o, numerator='adjclose', denominator='close'])
+            for i, o in zip(rescale_in, rescale_out)
+            ]
 
     future = FuturePriceExtractor(window=future_window)
 
