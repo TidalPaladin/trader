@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
     model = StockDL()
 
-    pipeline = Pipeline(stages=[rescaler, future, bucketizer, past, extractor, model])
+    pipeline = Pipeline(stages=[rescaler, future, bucketizer, past, extractor])
 
 
     DATA_DIR = "/mnt/iscsi/amex-nyse-nasdaq-stock-histories/full_history"
@@ -81,7 +81,9 @@ if __name__ == '__main__':
         .repartition(30)
 
 
-    result = pipeline.fit(raw_df)
+    result = pipeline.fit(raw_df).transform(raw_df)
+    result.cache()
+    result.show()
 
     #result.show()
     #result.repartition(1).write.format("csv").mode("overwrite").save(path)

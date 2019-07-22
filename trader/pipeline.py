@@ -164,13 +164,15 @@ class PastStandardizer(Transformer, HasInputCols, HasOutputCol, HasWindow):
 
         df = dataset
         for c in in_cols:
-            temp_df = df.withColumn('temp_raw', collect_list(c).over(window)) \
+            df = df.withColumn('temp_raw', collect_list(c).over(window)) \
                         .filter(size('temp_raw') >= 10) \
-                        .withColumn('temp', listToVector('temp_raw')) \
-                        .drop('temp_raw')
-
-            s = StandardScaler(inputCol='temp', outputCol=c+'_new', withMean=True)
-            df = s.fit(temp_df).transform(temp_df).drop('temp')
+                        .withColumn('avg_raw', avg(c).over(window)) \
+                        .withColumn('stdev_raw', stddev(c).over(window)) \
+                        .withColumn('temp', explode('temp_raw')) \
+                        .withColumn('temp2', (col('temp') - col('avg_raw')) / col('stdev_raw')) \
+                        .groupBy('date', 'symbol') \
+                        .withColumn(c+'_new', collect_list('temp_2')) \
+                        .join(df, ['date', 'symbol'])
 
         return df
 
