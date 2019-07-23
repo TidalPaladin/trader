@@ -9,7 +9,8 @@ from pyspark.ml.pipeline import Transformer, Estimator, Pipeline
 from pyspark.ml import UnaryTransformer
 from pyspark.ml.param.shared import *
 from pyspark.ml.param import *
-from params import *
+
+from trader.params import *
 
 import statistics as stats
 
@@ -26,7 +27,7 @@ def array_stddev(c):
 @udf(ArrayType(DoubleType(), True))
 def standardize(c):
     avg = float(stats.mean(c))
-    std = float(stats.stdev(c))
+    std = float(stats.stdev(c)) + 1e-6
     return [(float(x) - avg) / std for x in c]
 
 @udf(ArrayType(ArrayType(DoubleType(), True), True))
@@ -51,18 +52,7 @@ class Windower(UnaryTransformer, HasWindow, HasFunc):
         window = self.getWindow()
         func = getattr(F, self.getFunc())
 
-        size_col = 'win_size'
-        tar_col = 'target_size'
-
-        agg_window = Window().rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
-
-        result = dataset.withColumn(size_col, count(in_col).over(window)) \
-                        .withColumn(tar_col, max(size_col).over(agg_window)) \
-                        .withColumn(out_col, func(in_col).over(window)) \
-                        .filter(col(size_col) >= col(tar_col))
-
-        return result
-
+        return dataset.withColumn(out_col, func(in_col).over(window))
 
 class RelativeScaler(UnaryTransformer, HasNumerator, HasDenominator):
 
@@ -107,23 +97,25 @@ class PercentChange(UnaryTransformer, HasTarget):
         new_col = (col(in_col) - col(target)) / col(target) * 100
         return dataset.withColumn(out_col, new_col)
 
-class Standardizer(UnaryTransformer):
+class Standardizer(UnaryTransformer, HasNumFeatures):
 
     @keyword_only
-    def __init__(self, inputCol=None, outputCol=None):
+    def __init__(self, inputCol=None, outputCol=None, numFeatures=None):
         super(Standardizer, self).__init__()
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, inputCol=None, outputCol=None):
+    def setParams(self, inputCol=None, outputCol=None, numFeatures=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
     def _transform(self, dataset):
         in_col, out_col = self.getInputCol(), self.getOutputCol()
+        num_features = self.getNumFeatures()
+
         new_col = standardize(in_col)
-        return dataset.withColumn(out_col, new_col)
+        return dataset.where(size(in_col) >= num_features).withColumn(out_col, new_col)
 
 class FeatureExtractor(Transformer, HasInputCols, HasOutputCol):
 

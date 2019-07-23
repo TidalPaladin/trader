@@ -7,19 +7,42 @@ from pyspark.ml.feature import Bucketizer, StandardScaler
 import os
 
 from pyspark.ml.pipeline import Pipeline
-from pipeline import *
+from trader.pipeline import *
 
-import tensorflow as tf
 
 DATE_CUTOFF = 2017
 FUTURE_WINDOW_SIZE = 5
-PAST_WINDOW_SIZE = 10
-BATCH_SIZE=32
+PAST_WINDOW_SIZE = 180
+buckets = [-float('inf'), -5.0, -2.0, 2.0, 5.0, float('inf') ]
+bucket_col = '%_close'
+
+#SRC_DIR = "/mnt/iscsi/amex-nyse-nasdaq-stock-histories/full_history"
+#DEST_DIR = '/mnt/iscsi/tfrecords'
+
+SRC_DIR = "/app/data/src"
+DEST_DIR = "/app/data/dest"
 
 MoneyType = DecimalType(5, 2)
 
-def write_records(df, path):
-    df.repartition(4).write.mode('overwrite').format('tfrecords').option("recordType", "Example").save(path)
+def write_records(df, path, partitions=4):
+    df.repartition(partitions).write \
+        .format("tfrecords") \
+        .option('recordType', 'SequenceExample') \
+        .mode("overwrite") \
+        .save(path)
+
+def write_metrics(df, path):
+
+    num_labels = df.groupBy('label').count()
+    out_path = os.path.join(DEST_DIR, 'labels')
+    num_labels.write.mode('overwrite').option('header', 'true').csv(out_path)
+    num_labels.show()
+
+    num_examples = df.groupBy('symbol').count()
+    out_path = os.path.join(DEST_DIR, 'example_count')
+    num_examples.write.mode('overwrite').option('header', 'true').csv(out_path)
+    num_examples.show()
+
 
 if __name__ == '__main__':
 
@@ -57,9 +80,10 @@ if __name__ == '__main__':
 
     future_in = ['scaled_high', 'scaled_close', 'scaled_low']
     future_out = ['f_high', 'f_close', 'f_low']
+    future_metrics = ['max', 'avg', 'min']
     future = [
-            Windower(inputCol=i, outputCol=o, window=future_window, func='avg')
-            for i, o in zip(future_in, future_out)
+            Windower(inputCol=i, outputCol=o, window=future_window, func=m)
+            for i, o, m in zip(future_in, future_out, future_metrics)
     ]
 
     change_in = future_out
@@ -70,8 +94,6 @@ if __name__ == '__main__':
             for i, o, t in zip(change_in, change_out, change_tar)
     ]
 
-    buckets = [-float('inf'), -5.0, -2.0, 2.0, 5.0, float('inf') ]
-    bucket_col = '%_close'
     bucketizer = Bucketizer(splits=buckets, inputCol=bucket_col, outputCol='label')
 
     past_in = ['scaled_high', 'scaled_low', 'scaled_open', 'scaled_close', 'volume']
@@ -84,36 +106,41 @@ if __name__ == '__main__':
     standard_in = past_out
     standard_out = ['std_' + c for c in standard_in]
     standard = [
-            Standardizer(inputCol=i, outputCol=o)
+            Standardizer(inputCol=i, outputCol=o, numFeatures=PAST_WINDOW_SIZE)
             for i, o in zip(standard_in, standard_out)
     ]
 
-    feature_cols = standard_out
-    extractor = FeatureExtractor(inputCols=feature_cols, outputCol='features')
+    features_in = standard_out
+    features_in = [col(c).cast(ArrayType(FloatType())) for c in features_in]
+    features_out = ['high', 'low', 'open', 'close', 'volume']
+    label_out = col('label').cast(IntegerType())
 
-    stages = [*rescalers, *future, *change, *past, *standard, extractor]
+    stages = [*rescalers, *future, *change, *past, *standard]
     stages += [bucketizer]
     pipeline = Pipeline(stages=stages)
 
-    DATA_DIR = "/mnt/iscsi/amex-nyse-nasdaq-stock-histories/full_history"
-    input_files = os.listdir(DATA_DIR)
-    input_files = [os.path.join(DATA_DIR, f) for f in input_files]
+    input_files = os.listdir(SRC_DIR)
+    input_files = [os.path.join(SRC_DIR, f) for f in input_files]
 
     raw_df = spark.read \
-        .csv(path=input_files[0], header=True, schema=schema) \
+        .csv(path=input_files[:100], header=True, schema=schema) \
         .filter(year("date") > DATE_CUTOFF) \
         .withColumn("symbol", regexp_extract(input_file_name(), '([A-Z]+)\.csv', 1)) \
-        .repartition(30)
 
+    # Weight examples accoring to magnitude of percent change
+    weights_col = abs(col(bucket_col)).cast(FloatType())
+
+    output_cols = features_out + ['label']
     result = pipeline.fit(raw_df) \
                     .transform(raw_df) \
                     .dropna() \
-                    .select('features', col('label') .cast(IntegerType()))
+                    .withColumn('weight', weights_col) \
+                    .cache()
 
-    path = '/mnt/iscsi/tfrecords'
+    examples = result.select(*features_in, label_out, weights_col) \
+                    .toDF(*features_out, 'label', 'weight')
 
-    result.write \
-        .format("tfrecords") \
-        .option('recordType', 'SequenceExample') \
-        .mode("overwrite") \
-        .save(path)
+    out_path = os.path.join(DEST_DIR, 'tfrecords')
+    write_records(examples, out_path, partitions=100)
+
+    #print("Total records: %d" % examples.count())
