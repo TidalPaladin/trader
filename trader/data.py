@@ -6,14 +6,10 @@ from pyspark.sql import Window
 from pyspark.ml.feature import Bucketizer, StandardScaler
 import os
 
-from pyspark.ml.pipeline import Transformer, Pipeline
-from pipeline import FuturePriceExtractor, PastStandardizer, FeatureExtractor, RelativeScaler
+from pyspark.ml.pipeline import Pipeline
+from pipeline import *
 
-from pipeline import StockDL, StockDLModel
-
-from model import TinyImageNet
 import tensorflow as tf
-
 
 DATE_CUTOFF = 2017
 FUTURE_WINDOW_SIZE = 5
@@ -51,29 +47,53 @@ if __name__ == '__main__':
         .partitionBy("symbol") \
         .rowsBetween(-PAST_WINDOW_SIZE+1, 0)
 
-    rescale_in = ['high', 'low', 'open']
+
+    rescale_in = ['high', 'low', 'close', 'open']
     rescale_out = ['scaled_' + c for c in rescale_in]
     rescalers = [
-            PriceRescaler(inputCol=i, outputCol=o, numerator='adjclose', denominator='close'])
+            RelativeScaler(inputCol=i, outputCol=o, numerator='adjclose', denominator='close')
             for i, o in zip(rescale_in, rescale_out)
             ]
 
-    future = FuturePriceExtractor(window=future_window)
+    future_in = ['scaled_high', 'scaled_close', 'scaled_low']
+    future_out = ['f_high', 'f_close', 'f_low']
+    future = [
+            Windower(inputCol=i, outputCol=o, window=future_window, func='avg')
+            for i, o in zip(future_in, future_out)
+    ]
 
-    past_cols = ['high', 'low', 'open', 'close', 'volume']
-    past = PastStandardizer(inputCols=past_cols, outputCol='dummy', window=past_window)
+    change_in = future_out
+    change_out = ['%_high', '%_close', '%_low']
+    change_tar = ['scaled_high', 'scaled_close', 'scaled_low']
+    change = [
+            PercentChange(inputCol=i, outputCol=o, target=t)
+            for i, o, t in zip(change_in, change_out, change_tar)
+    ]
 
     buckets = [-float('inf'), -5.0, -2.0, 2.0, 5.0, float('inf') ]
-    bucket_col = 'f_avg'
+    bucket_col = '%_close'
     bucketizer = Bucketizer(splits=buckets, inputCol=bucket_col, outputCol='label')
 
-    feature_cols = ['high_new', 'low_new', 'open_new', 'close_new', 'volume_new']
-    extractor = FeatureExtractor(inputCols=feature_cols, outputCol='features', numFeatures=PAST_WINDOW_SIZE)
+    past_in = ['scaled_high', 'scaled_low', 'scaled_open', 'scaled_close', 'volume']
+    past_out = ['past_' + c for c in past_in]
+    past = [
+            Windower(inputCol=i, outputCol=o, window=past_window, func='collect_list')
+            for i, o in zip(past_in, past_out)
+    ]
 
-    model = StockDL()
+    standard_in = past_out
+    standard_out = ['std_' + c for c in standard_in]
+    standard = [
+            Standardizer(inputCol=i, outputCol=o)
+            for i, o in zip(standard_in, standard_out)
+    ]
 
-    pipeline = Pipeline(stages=[rescaler, future, bucketizer, past, extractor])
+    feature_cols = standard_out
+    extractor = FeatureExtractor(inputCols=feature_cols, outputCol='features')
 
+    stages = [*rescalers, *future, *change, *past, *standard, extractor]
+    stages += [bucketizer]
+    pipeline = Pipeline(stages=stages)
 
     DATA_DIR = "/mnt/iscsi/amex-nyse-nasdaq-stock-histories/full_history"
     input_files = os.listdir(DATA_DIR)
@@ -85,10 +105,15 @@ if __name__ == '__main__':
         .withColumn("symbol", regexp_extract(input_file_name(), '([A-Z]+)\.csv', 1)) \
         .repartition(30)
 
+    result = pipeline.fit(raw_df) \
+                    .transform(raw_df) \
+                    .dropna() \
+                    .select('features', col('label') .cast(IntegerType()))
 
-    result = pipeline.fit(raw_df).transform(raw_df)
-    result.cache()
-    result.show()
+    path = '/mnt/iscsi/tfrecords'
 
-    #result.show()
-    #result.repartition(1).write.format("csv").mode("overwrite").save(path)
+    result.write \
+        .format("tfrecords") \
+        .option('recordType', 'SequenceExample') \
+        .mode("overwrite") \
+        .save(path)
