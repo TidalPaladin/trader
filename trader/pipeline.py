@@ -139,4 +139,3 @@ class WindowSizeEnforcer(Transformer, HasInputCols, HasNumFeatures):
         for c in in_cols:
             result = result.where(size(c) >= num_features)
         return result
-

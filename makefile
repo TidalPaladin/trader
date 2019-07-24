@@ -4,7 +4,8 @@ IMG_NAME='trader'
 LIB_NAME='trader'
 
 DATA_SRC="/mnt/iscsi/amex-nyse-nasdaq-stock-histories/full_history"
-DATA_DEST='/mnt/iscsi/tfrecords'
+DATA_DEST='/mnt/iscsi/tfrecords2'
+ARTIFACTS_DIR='/mnt/iscsi/artifacts'
 
 clean:
 	find . -name '*.pyc' -exec rm --force {} +
@@ -19,13 +20,14 @@ train:
 		--runtime=nvidia \
 		-p 0.0.0.0:6006:6006 \
 		-v /home/tidal/Documents/trader:/app\
-		-v ${DATA_SRC}:/app/data/src \
-		-v ${DATA_DEST}:/app/data/dest \
-		${IMG_NAME} ./train.sh
+		-v ${DATA_SRC}:/mnt/data/src \
+		-v ${DATA_DEST}:/mnt/data/dest \
+		-v ${ARTIFACTS_DIR}:/mnt/artifacts \
+		${IMG_NAME} /app/train.sh
 
 records:
 	docker run -it \
 		-v /home/tidal/Documents/trader:/app\
-		-v ${DATA_SRC}:/app/data/src \
-		-v ${DATA_DEST}:/app/data/dest \
+		-v ${DATA_SRC}:/mnt/data/src \
+		-v ${DATA_DEST}:/mnt/data/dest \
 		${IMG_NAME} '/app/tfrecords.sh'
