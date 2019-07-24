@@ -17,10 +17,11 @@ build:
 train:
 	docker run -it \
 		--runtime=nvidia \
+		-p 0.0.0.0:6006:6006 \
 		-v /home/tidal/Documents/trader:/app\
 		-v ${DATA_SRC}:/app/data/src \
 		-v ${DATA_DEST}:/app/data/dest \
-		${IMG_NAME} -c "python /app/train.py"
+		${IMG_NAME} ./train.sh
 
 records:
 	docker run -it \

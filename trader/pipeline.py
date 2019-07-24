@@ -52,6 +52,7 @@ class Windower(UnaryTransformer, HasWindow, HasFunc):
         window = self.getWindow()
         func = getattr(F, self.getFunc())
 
+
         return dataset.withColumn(out_col, func(in_col).over(window))
 
 class RelativeScaler(UnaryTransformer, HasNumerator, HasDenominator):
@@ -117,21 +118,25 @@ class Standardizer(UnaryTransformer, HasNumFeatures):
         new_col = standardize(in_col)
         return dataset.where(size(in_col) >= num_features).withColumn(out_col, new_col)
 
-class FeatureExtractor(Transformer, HasInputCols, HasOutputCol):
+class WindowSizeEnforcer(Transformer, HasInputCols, HasNumFeatures):
 
     @keyword_only
-    def __init__(self, inputCols=None, outputCol=None):
-        super(FeatureExtractor, self).__init__()
+    def __init__(self, inputCols=None, numFeatures=None):
+        super(WindowSizeEnforcer, self).__init__()
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
     @keyword_only
-    def setParams(self, inputCols=None, outputCol=None):
+    def setParams(self, inputCols=None, numFeatures=None):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
     def _transform(self, dataset):
-        out_col, in_cols = self.getOutputCol(), self.getInputCols()
-        out_type = ArrayType(ArrayType(FloatType()))
-        df = dataset.withColumn('features', zip_arrays(*in_cols))
-        return df
+        in_cols = self.getInputCols()
+        num_features = self.getNumFeatures()
+
+        result = dataset
+        for c in in_cols:
+            result = result.where(size(c) >= num_features)
+        return result
+

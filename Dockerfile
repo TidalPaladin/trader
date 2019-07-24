@@ -34,7 +34,7 @@ RUN apt-get -y update && \
 ENV SPARK_HOME /usr/local/spark
 ENV PYTHONPATH $SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.7-src.zip
 ENV MESOS_NATIVE_LIBRARY /usr/local/lib/libmesos.so
-ENV SPARK_OPTS --driver-java-options=-Xms1024M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info
+ENV SPARK_OPTS --driver-java-options=-Xms4096M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info --driver-memory 6g
 
 ENV NAMENODE localhost
 ENV DEPLOY_MODE client
@@ -48,9 +48,10 @@ COPY trader /app/trader
 COPY train.py ${TRAIN_EXEC}
 COPY data.py /app/
 COPY tfrecords.sh ${REC_EXEC}
+COPY train.sh /app/
 COPY ${SPARK_TF} /app/
 
-RUN mkdir -p /app/data/src /app/data/dest
+RUN mkdir -p /app/data/src /app/data/dest /app/tblogs /app/checkpoints /app/log
 
 WORKDIR /app
 
