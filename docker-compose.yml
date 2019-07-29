@@ -1,4 +1,4 @@
-version: '3'
+version: '2.3'
 
 networks:
   sparknet:
@@ -42,9 +42,10 @@ services:
   trader:
     build: ./trader
     container_name: trader
+    runtime: nvidia
     volumes:
       - ${DEST_DIR}/tfrecords:/data/tfrecords
       - ${ARTIFACT_DIR}:/artifacts
       - /home/tidal/Documents/trader/trader/python:/app
-        #environment:
-        #- CUDA_VISIBLE_DEVICES=1
+    environment:
+      - CUDA_VISIBLE_DEVICES
