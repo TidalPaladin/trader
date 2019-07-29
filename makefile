@@ -23,7 +23,7 @@ train:
 		-v ${DATA_SRC}:/mnt/data/src \
 		-v ${DATA_DEST}:/mnt/data/dest \
 		-v ${ARTIFACTS_DIR}:/mnt/artifacts \
-		${IMG_NAME} /app/train.sh
+		${IMG_NAME} '/app/train.sh'
 
 records:
 	docker run -it \
@@ -31,3 +31,13 @@ records:
 		-v ${DATA_SRC}:/mnt/data/src \
 		-v ${DATA_DEST}:/mnt/data/dest \
 		${IMG_NAME} '/app/tfrecords.sh'
+
+notebook:
+	docker run -it \
+		--runtime=nvidia \
+		-p 8888:8888 \
+		-v /home/tidal/Documents/trader:/app\
+		-v ${DATA_SRC}:/mnt/data/src \
+		-v ${DATA_DEST}:/mnt/data/dest \
+		-v ${ARTIFACTS_DIR}:/mnt/artifacts \
+		${IMG_NAME}

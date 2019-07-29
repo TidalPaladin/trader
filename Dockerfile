@@ -34,14 +34,6 @@ ENV PYTHONPATH $SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.7-src.zip
 ENV MESOS_NATIVE_LIBRARY /usr/local/lib/libmesos.so
 ENV SPARK_OPTS --driver-java-options=-Xms4096M --driver-java-options=-Xmx4096M --driver-java-options=-Dlog4j.logLevel=info --driver-memory 6g
 
-# Specify local spark operation, override as applicable
-ENV \
-"NAMENODE"="local[*]" \
-"DEPLOY_MODE"="client" \
-"SPARK_TF"="spark-tensorflow-connector_2.11-1.10.0.jar"
-
-COPY [ "trader", "data.py", "train.py", "train.sh", "tfrecords.sh", "${SPARK_TF}", "/app/" ]
-
 # Data source dir and TFRecord output dir
 # Execution artifacts (logs/checkpoints)
 ENV \
@@ -54,4 +46,13 @@ VOLUME ["${ARTIFACTS_DIR}", "${SRC_DIR}", "${DEST_DIR}"]
 # Expose Tensorboard ports
 EXPOSE 6006/tcp 6006/udp
 
+# Specify local spark operation, override as applicable
+ENV \
+"NAMENODE"="local[*]" \
+"DEPLOY_MODE"="client" \
+"SPARK_TF"="spark-tensorflow-connector_2.11-1.10.0.jar"
+
+COPY [ "trader", "data.py", "train.py", "train.sh", "tfrecords.sh", "${SPARK_TF}", "/app/" ]
+
+WORKDIR /app
 ENTRYPOINT [ "/bin/sh" ]

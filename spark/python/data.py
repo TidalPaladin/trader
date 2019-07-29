@@ -1,18 +1,32 @@
 #!python3
 import os
+import sys
 from pyspark.sql import *
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql import Window
 from pyspark.ml.feature import Bucketizer, StandardScaler
 from pyspark.ml.pipeline import Pipeline
-from trader.pipeline import *
+from pipeline import *
 import itertools
-
-import tensorflow as tf
+import IPython
 
 MoneyType = DecimalType(5, 2)
 
+SRC_DIR = "/data/src"
+DEST_DIR = "/data/dest"
+
+spark = SparkSession.builder \
+        .master("spark://spark:7077") \
+    .appName("trader") \
+    .getOrCreate()
+
+
+sc = spark.sparkContext
+#sc.setLogLevel("WARN")
+log4jLogger = sc._jvm.org.apache.log4j
+LOGGER = log4jLogger.LogManager.getLogger(__name__)
+LOGGER.info("pyspark script logger initialized")
 
 class InputPipeline(object):
 
@@ -67,12 +81,20 @@ class InputPipeline(object):
     def get_stages(self):
 
         # Rescale based on adjclose / close ratio
-        rescale_in = ['high', 'low', 'close', 'open']
+        rescale_in = ['high', 'low', 'close']
         rescale_out = ['scaled_' + c for c in rescale_in]
         rescalers = [
                 RelativeScaler(inputCol=i, outputCol=o, numerator='adjclose', denominator='close')
                 for i, o in zip(rescale_in, rescale_out)
-                ]
+        ]
+
+        # Standardize price /volume columns to zero mean unit variance
+        standard_in = rescale_out + ['volume']
+        standard_out = ['std_' + c for c in standard_in]
+        standard = [
+                Standardizer(inputCol=i, outputCol=o)
+                for i, o in zip(standard_in, standard_out)
+        ]
 
         # Calculate aggregate metrics over future window
         future_in = ['scaled_high', 'scaled_close', 'scaled_low']
@@ -94,10 +116,19 @@ class InputPipeline(object):
 
         # Discretize future percent change
         # TODO add option to keep more output cols than self.bucket_col
-        bucketizer = Bucketizer(splits=self.buckets, inputCol=self.bucket_col, outputCol='label')
+        bucketizer = Bucketizer(
+                splits=self.buckets,
+                inputCol=self.bucket_col,
+                outputCol='label',
+        )
+
+        # Constrain future window to only full arrays
+        position_in = 'date'
+        position_out = 'position'
+        position = PositionalDateEncoder(inputCol=position_in, outputCol=position_out)
 
         # Collect price data from historical window to array
-        past_in = ['scaled_high', 'scaled_low', 'scaled_open', 'scaled_close', 'volume']
+        past_in = standard_out + [position_out]
         past_out = ['past_' + c for c in past_in]
         past = [
                 Windower(inputCol=i, outputCol=o, window=self.past_window, func='collect_list')
@@ -109,37 +140,25 @@ class InputPipeline(object):
         win_size_out = win_size_in
         size_enf = WindowSizeEnforcer(inputCols=win_size_in, numFeatures=self.past_window_size)
 
-        # Standardize historical featuer window to zero mean unit variance
-        # NOTE This is currently skipped, UDF is too slow!
-        standard_in = past_out
-        standard_out = ['std_' + c for c in standard_in]
-        standard = [
-                Standardizer(inputCol=i, outputCol=o, numFeatures=self.past_window_size)
-                for i, o in zip(standard_in, standard_out)
-        ]
-
-        # Fix columns for skipping above. Remove this if standardizer is used
-        standard_out = past_out
-
         stages = {
                 'rescale': rescalers,
                 'future': future,
                 'change': change,
                 'bucketizer': [bucketizer],
+                'standard': standard,
+                'position': [position],
                 'past': past,
                 'size_enf': [size_enf],
-                'standard': standard
         }
 
         self.features_in = past_out
-        self.features_out = ['high', 'low', 'open', 'close', 'volume']
+        self.features_out = ['high', 'low', 'close', 'volume', 'position']
 
         return stages
 
 
-    def __init__(self, spark, src, **kwargs):
+    def __init__(self, src, **kwargs):
         self.path = src
-        self.spark = spark
         self._result_df = None
         self._features_df = None
 
@@ -150,15 +169,16 @@ class InputPipeline(object):
         self.past_window = InputPipeline.get_window(-1 * self.past_window_size)
 
         self.label_out = col('label').cast(IntegerType())
+        self.change = col(self.bucket_col).cast(FloatType())
 
     @classmethod
-    def read(cls, spark, path):
-        symbol_col = regexp_extract(input_file_name(), '([A-Z]+)\.csv', 1)
+    def read(cls, path):
+        symbol_col = hash(input_file_name())
         result = (spark
                     .read
                     .csv(path=path, header=True, schema=cls.SCHEMA)
-                    .withColumn("symbol", symbol_col))
-
+                    .withColumn("symbol", symbol_col)
+                    .repartition(200))
         return result
 
     @staticmethod
@@ -186,15 +206,18 @@ class InputPipeline(object):
         read_target = os.path.join(self.path, "*")
 
         # Read raw data
-        _ = (
+        raw_df = (
             InputPipeline
-                .read(self.spark, read_target)
+                .read(read_target)
                 .repartition(200, "symbol")
         )
+        raw_df.cache()
 
         # Filter by date and by price
-        _ = InputPipeline.filter_year(_, self.date_cutoff)
+        _ = InputPipeline.filter_year(raw_df, self.date_cutoff)
         _ = InputPipeline.filter_price(_, self.price_cutoff)
+        _ = _.cache()
+        raw_df.unpersist()
 
         # Apply pipeline
         _ = (
@@ -212,54 +235,97 @@ class InputPipeline(object):
         if self._features_df: return self._features_df
 
         # Specify output data types
-        weight_t = FloatType()
         features_t = ArrayType(FloatType())
         label_t = IntegerType()
+        change_t = FloatType()
 
-        # Create output columns
-        weight_col = abs(col(self.bucket_col)).cast(weight_t).alias('weight')
         feature_cols = [
                 col(i).cast(features_t).alias(o)
                 for i, o in zip(self.features_in, self.features_out)
         ]
         label_col = col('label').cast(label_t).alias('label')
+        change_col = col(self.bucket_col).cast(change_t).alias('change')
 
         # Flatten stages
         stages = list(itertools.chain.from_iterable(stages))
 
         # Get features output
-        _ = self.getResult(stages).select(*feature_cols, label_col, weight_col)
+        _ = self.getResult(stages).select(*feature_cols, label_col, change_col)
+        _ = _.filter(abs(col('change')) <= 50.0)
+
+
+        # Sample labels equally
+        f = _.groupby('label').count()
+        f_min_count = f.select('count').agg(min('count').alias('minVal')).collect()[0].minVal
+        f = f.withColumn('frac',f_min_count/col('count'))
+        frac = dict(f.select('label', 'frac').collect())
+        _ = _.sampleBy('label', fractions=frac)
+
         self._features_df = _.cache()
         return self._features_df
 
+def make_records():
 
-if __name__ == '__main__':
 
-    SRC_DIR = "/mnt/data/src"
-    DEST_DIR = "/mnt/data/dest"
-
-    spark = SparkSession.builder \
-        .config("spark.cores.max", 6) \
-        .config("spark.executor.cores", 2) \
-        .config("spark.local.dir", os.path.join(DEST_DIR, 'tmp')) \
-        .appName("trader") \
-        .master("local[6]") \
-        .getOrCreate()
 
     kwargs = {
-        'date_cutoff': 2017,
-        'future_window_size' : 5,
+        'date_cutoff': 2010,
+        'future_window_size' : 3,
         'past_window_size' : 180,
-        'stocks_limit' : 10,
-        'buckets' : [-float('inf'), -5.0, -2.0, 2.0, 5.0, float('inf') ],
+        'price_cutoff' : 1.0,
+        'buckets' : [-float('inf'), -2, 2, float('inf')],
         'bucket_col' : '%_close'
     }
 
-    ipl = InputPipeline(spark, SRC_DIR, **kwargs)
+
+    ipl = InputPipeline(SRC_DIR, **kwargs)
     stages = ipl.get_stages()
-    stages.pop('standard')
     stages = stages.values()
 
     features_df = ipl.getFeatures(stages)
     out_path = os.path.join(DEST_DIR, 'tfrecords')
-    InputPipeline.write_records(features_df, out_path, partitions=400)
+
+
+    features_df.show()
+    features_df.groupBy('label').count().show()
+    features_df.count()
+
+    InputPipeline.write_records(features_df, out_path, partitions=200)
+
+
+def explore():
+
+
+    kwargs = {
+        'date_cutoff': 2017,
+        'future_window_size' : 5,
+        'past_window_size' : 5,
+        'price_cutoff' : 1.0,
+        'buckets' : [-float('inf'), -15.0, -5.0 -2, 2, 2.5, 5.0, 15.0, float('inf')],
+        'bucket_col' : '%_close'
+    }
+
+    ipl = InputPipeline(SRC_DIR, **kwargs)
+    stages = ipl.get_stages()
+    stages = stages.values()
+
+    features_df = ipl.getFeatures(stages)
+    results_df = ipl.getResult(stages)
+    features_df.collect()
+    features_df.show()
+
+    features_df.groupBy("label").count().show()
+    print(features_df.count())
+
+    features_df.groupBy("label").count() \
+    .write.mode("overwrite").csv(DEST_DIR + '/test')
+
+    #IPython.embed()
+
+if __name__ == '__main__':
+
+    if len(sys.argv) > 1 and sys.argv[1] == 'explore':
+        explore()
+    else:
+        make_records()
+

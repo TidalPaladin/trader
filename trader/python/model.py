@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras import Model
 
-class Tail(tf.keras.Model):
+class Tail(layers.Layer):
 
     def __init__(self, out_width=32):
         """
@@ -20,12 +20,13 @@ class Tail(tf.keras.Model):
         self.conv = layers.Conv1D(
                 filters=out_width,
                 name='Tail_conv',
-                kernel_size=3,
+                kernel_size=7,
                 strides=1,
                 padding='same',
                 use_bias=False,
                 activation=None,
         )
+
 
     def call(self, inputs, training=False, **kwargs):
         """
@@ -41,9 +42,10 @@ class Tail(tf.keras.Model):
         Return:
             Output of forward pass
         """
-        return self.conv(inputs, **kwargs)
+        _ = self.conv(inputs, **kwargs)
+        return _
 
-class Bottleneck(tf.keras.Model):
+class Bottleneck(layers.Layer):
     """
     Resnet style residual bottleneck block consisting of:
         1. 1x1/1 channel convolution, Ni / 4 bottleneck
@@ -78,29 +80,18 @@ class Bottleneck(tf.keras.Model):
         self.relu1 = layers.ReLU()
 
         # 3x3 depthwise separable convolution
-        self.spatial_conv = layers.Conv1D(
-                filters=out_width // bottleneck,
-                name='Bottleneck_spatial',
+        self.spatial_conv = layers.SeparableConv1D(
+                filters=out_width,
+                name='Bottleneck_conv',
                 kernel_size=3,
                 strides=1,
                 use_bias=False,
                 activation=None,
                 padding='same'
         )
+
         self.bn2 = layers.BatchNormalization()
         self.relu2 = layers.ReLU()
-
-        # 1x1 depthwise convolution, exit the bottleneck
-        self.channel_conv_2 = layers.Conv1D(
-                filters=out_width,
-                name='Bottleneck_exit',
-                kernel_size=1,
-                strides=1,
-                use_bias=False,
-                activation=None,
-        )
-        self.bn3 = layers.BatchNormalization()
-        self.relu3 = layers.ReLU()
 
         # Merge operation to join residual + main paths
         self.merge = layers.Add()
@@ -130,15 +121,10 @@ class Bottleneck(tf.keras.Model):
         _ = self.relu2(_)
         _ = self.spatial_conv(_)
 
-        # Exit bottleneck, depthwise convolution
-        _ = self.bn3(_, training=training)
-        _ = self.relu3(_)
-        _ = self.channel_conv_2(_)
-
         # Combine residual and main paths
         return self.merge([inputs, _], **kwargs)
 
-class Downsample(tf.keras.Model):
+class Downsample(layers.Layer):
     """
     Resnet style residual bottleneck block consisting of:
         1. 1x1/1 depthwise convolution + BN + ReLU (bottlenecked)
@@ -183,8 +169,8 @@ class Downsample(tf.keras.Model):
         self.relu1 = layers.ReLU()
 
         # 3x3 depthwise separable spatial convolution
-        self.spatial_conv = layers.Conv1D(
-                filters=out_width // bottleneck,
+        self.spatial_conv = layers.SeparableConv1D(
+                filters=out_width,
                 name='Downsample_conv',
                 kernel_size=3,
                 strides=stride,
@@ -195,17 +181,6 @@ class Downsample(tf.keras.Model):
         self.bn2 = layers.BatchNormalization()
         self.relu2 = layers.ReLU()
 
-        # 1x1 convolution, exit the bottleneck
-        self.channel_conv_2 = layers.Conv1D(
-                filters=out_width,
-                name='Downsample_exit',
-                kernel_size=1,
-                strides=1,
-                use_bias=False,
-                activation=None,
-        )
-        self.bn3 = layers.BatchNormalization()
-        self.relu3 = layers.ReLU()
 
         # 3x3/2 convolution along main path
         self.main = layers.Conv1D(
@@ -248,11 +223,6 @@ class Downsample(tf.keras.Model):
         _ = self.relu2(_)
         _ = self.spatial_conv(_)
 
-        # Exit bottleneck
-        _ = self.bn3(_, training=training)
-        _ = self.relu3(_)
-        _ = self.channel_conv_2(_)
-
         # Main path with convolution
         # TODO can we use first residual BN + ReLU here?
         m = self.bn_main(inputs, training=training)
@@ -263,7 +233,7 @@ class Downsample(tf.keras.Model):
         return self.merge([main, _])
 
 
-class Head(tf.keras.Model):
+class Head(layers.Layer):
     """
     Basic vision classification network head consisting of:
         1. 1D Global average pooling
@@ -282,23 +252,135 @@ class Head(tf.keras.Model):
         super().__init__()
 
         self.global_avg = layers.GlobalAveragePooling1D()
-        self.dense = layers.Dense(
+        self.dense1 = layers.Dense(
+                units=512,
+                use_bias=True,
+                activation='relu',
+                name='Head_dense1',
+                kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                bias_regularizer=tf.keras.regularizers.l2(0.01)
+        )
+
+        self.dense2 = layers.Dense(
                 units=classes,
                 use_bias=True,
-                activation=None,
-                name='Head_dense',
+                activation='softmax',
+                name='Head_dense2',
+                kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                bias_regularizer=tf.keras.regularizers.l2(0.01)
         )
-        self.softmax = layers.Softmax()
+
+        #self.dropout = layers.Dropout(0.2)
 
     def call(self, inputs, training=False, **kwargs):
         _ = self.global_avg(inputs)
+        _ = self.dense1(_)
+        _ = self.dense2(_)
+        #_ = self.dropout(_)
+        return _
+
+
+class AttentionHead(layers.Layer):
+    """
+    Basic vision classification network head consisting of:
+        1. 1D Global average pooling
+        2. Fully connected layer + BN + ReLU
+    """
+
+    def __init__(self, classes=100):
+        """
+        Arguments:
+            classes:    Positive integer, number of classes in the output of the
+                        fully connected layer.
+
+        Keyword Arguments:
+            Forwarded to the dense layer.
+        """
+        super().__init__()
+
+        self.pooling = layers.GlobalAveragePooling1D()
+
+        self.dense = layers.Dense(
+                units=64,
+                use_bias=True,
+                activation='relu',
+                name='Head_dense',
+                kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                bias_regularizer=tf.keras.regularizers.l2(0.01)
+        )
+
+        self.dropout = layers.Dropout(0.1)
+
+        self.dense2 = layers.Dense(
+                units=classes,
+                use_bias=True,
+                activation='softmax',
+                name='Head_dense',
+                kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                bias_regularizer=tf.keras.regularizers.l2(0.01)
+        )
+
+    def call(self, inputs, training=False, **kwargs):
+        _ = self.pooling(inputs)
         _ = self.dense(_)
-        return _ if training else self.softmax(_)
+        _ = self.dropout(_, training=training)
+        _ = self.dense2(_)
+        return _
 
+class RegressionHead(layers.Layer):
+    """
+    Basic vision classification network head consisting of:
+        1. 1D Global average pooling
+        2. Fully connected layer + BN + ReLU
+    """
 
-class TinyImageNet(tf.keras.Model):
+    def __init__(self):
+        """
+        Arguments:
+            classes:    Positive integer, number of classes in the output of the
+                        fully connected layer.
 
-    def __init__(self, levels, use_head=True, use_tail=True):
+        Keyword Arguments:
+            Forwarded to the dense layer.
+        """
+        super().__init__()
+
+        self.pooling = layers.GlobalAveragePooling1D()
+
+        self.dense = layers.Dense(
+                units=64,
+                use_bias=True,
+                activation='relu',
+                name='Head_dense',
+                kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                bias_regularizer=tf.keras.regularizers.l2(0.01)
+        )
+
+        self.dropout = layers.Dropout(0.1)
+        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.flatten = layers.Flatten()
+
+        self.dense2 = layers.Dense(
+                units=1,
+                use_bias=True,
+                activation=None,
+                name='Head_dense',
+                kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                bias_regularizer=tf.keras.regularizers.l2(0.01)
+        )
+
+    def call(self, inputs, training=False, **kwargs):
+        _ = self.pooling(inputs)
+        _ = self.dense(_)
+        _ = self.dropout(_, training=training)
+        _ = self.norm(_)
+        _ = self.flatten(_)
+        _ = self.dense2(_)
+        return _
+
+class TraderNet(tf.keras.Model):
+
+    def __init__(self, levels, use_head=True, use_tail=True, use_attn=True):
         """
         Arguments:
             levels: List of positive integers. Each list entry denotes a level of
@@ -314,8 +396,15 @@ class TinyImageNet(tf.keras.Model):
         super().__init__()
         width = 32
 
+        self.use_attn = use_attn
+
         # Use default tail if requested in params
-        self.tail = Tail(out_width=width) if use_tail else None
+        if use_tail == True:
+            self.tail = Tail(out_width=width)
+        elif not use_tail == None:
+            self.tail = use_tail
+        else:
+            self.tail = None
 
         # Loop through levels and their parameterized repeat counts
         self.blocks = list()
@@ -337,8 +426,20 @@ class TinyImageNet(tf.keras.Model):
         self.final_bn = layers.BatchNormalization(name='final_bn')
         self.final_relu = layers.ReLU(name='final_relu')
 
+        self.attention = MultiHeadAttention(d_model=512, num_heads=8)
+
+        self.norm_attn = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+
+        self.dropout_attn = tf.keras.layers.Dropout(0.1)
+
         # Use default head if requested in params
-        self.head = Head(classes=5) if use_head else None
+        if use_head == True:
+            self.head = RegressionHead()
+        elif not use_head == None:
+            self.head = use_head
+        else:
+            self.head = None
+
 
     def call(self, inputs, training=False, **kwargs):
         """
@@ -364,4 +465,59 @@ class TinyImageNet(tf.keras.Model):
         _ = self.final_bn(_, training=training)
         _ = self.final_relu(_)
 
-        return self.head(_, training, **kwargs) if self.head else _
+        if self.use_attn:
+            attn_out = self.attention(inputs=[_, _, _])
+            attn_out = self.dropout_attn(attn_out, training=training)
+            _ = self.norm_attn(attn_out + _)
+
+        return self.head(_, training=training, **kwargs) if self.head else _
+
+# https://www.tensorflow.org/beta/tutorials/text/transformer
+class MultiHeadAttention(layers.Layer):
+  def __init__(self, d_model, num_heads):
+    super(MultiHeadAttention, self).__init__()
+    self.num_heads = num_heads
+    self.d_model = d_model
+
+    assert d_model % self.num_heads == 0
+
+    self.depth = d_model // self.num_heads
+
+    self.wq = tf.keras.layers.Dense(d_model, name='wQ')
+    self.wk = tf.keras.layers.Dense(d_model, name='wK')
+    self.wv = tf.keras.layers.Dense(d_model, name='wV')
+
+    self.attention = layers.Attention(use_scale=True, name='dotprod_attn')
+    self.dense = tf.keras.layers.Dense(d_model, name='attn_dense')
+
+  def split_heads(self, x, batch_size):
+    """Split the last dimension into (num_heads, depth).
+    Transpose the result such that the shape is (batch_size, num_heads, seq_len, depth)
+    """
+    x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
+    return tf.transpose(x, perm=[0, 2, 1, 3])
+
+  def call(self, inputs, training=False):
+
+    q, v, k = inputs
+    batch_size = tf.shape(q)[0]
+
+    q = self.wq(q)  # (batch_size, seq_len, d_model)
+    k = self.wk(k)  # (batch_size, seq_len, d_model)
+    v = self.wv(v)  # (batch_size, seq_len, d_model)
+
+    q = self.split_heads(q, batch_size)  # (batch_size, num_heads, seq_len_q, depth)
+    k = self.split_heads(k, batch_size)  # (batch_size, num_heads, seq_len_k, depth)
+    v = self.split_heads(v, batch_size)  # (batch_size, num_heads, seq_len_v, depth)
+
+    # scaled_attention.shape == (batch_size, num_heads, seq_len_q, depth)
+    # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
+    attn = self.attention(inputs=[q, v, k])
+
+    attn = tf.transpose(attn, perm=[0, 2, 1, 3])  # (batch_size, seq_len_q, num_heads, depth)
+
+    attn = tf.reshape(attn, (batch_size, -1, self.d_model))  # (batch_size, seq_len_q, d_model)
+
+    output = self.dense(attn)  # (batch_size, seq_len_q, d_model)
+
+    return output
