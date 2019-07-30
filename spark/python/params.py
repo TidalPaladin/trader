@@ -82,3 +82,51 @@ class HasTarget(Params):
 
     def getTarget(self):
         return self.getOrDefault(self.target)
+
+class HasMax(Params):
+    """
+    Mixin for param metric: Window aggregation metric.
+    """
+
+    max = Param(Params._dummy(), "max", "Aggregation max to use over window")
+
+    def __init__(self):
+        super(HasMax, self).__init__()
+
+    def setMax(self, value):
+        return self._set(max=value)
+
+    def getMax(self):
+        return self.getOrDefault(self.max)
+
+class HasMin(Params):
+    """
+    Mixin for param metric: Window aggregation metric.
+    """
+
+    min = Param(Params._dummy(), "min", "Aggregation min to use over window")
+
+    def __init__(self):
+        super(HasMin, self).__init__()
+
+    def setMin(self, value):
+        return self._set(min=value)
+
+    def getMin(self):
+        return self.getOrDefault(self.min)
+
+class HasThreshold(Params):
+    """
+    Mixin for param metric: Window aggregation metric.
+    """
+
+    threshold = Param(Params._dummy(), "threshold", "Aggregation threshold to use over window")
+
+    def __init__(self):
+        super(HasThreshold, self).__init__()
+
+    def setThreshold(self, value):
+        return self._set(threshold=value)
+
+    def getThreshold(self):
+        return self.getOrDefault(self.threshold)

@@ -16,20 +16,17 @@ import statistics as stats
 from math import pi
 import math
 
-@udf(ArrayType(DoubleType(), True))
-def standardize(c):
-    """UDF for standardizing a column to zero mean unit variance"""
-    avg = float(stats.mean(c))
+spark = (
+    SparkSession
+    .builder
+    .appName("trader")
+    .getOrCreate()
+)
 
-    # Epsilon value to avoid divide by 0 std
-    epsilon = 1.0 / math.sqrt(len(c))
 
-    std = math.max(float(stats.stdev(c)) , epsilon)
-    return [(float(x) - avg) / std for x in c]
-
-@udf(ArrayType(ArrayType(DoubleType(), True), True))
-def zip_arrays(*cols):
-    return [ list(x) for x in zip(*cols) ]
+sc = spark.sparkContext
+log4jLogger = sc._jvm.org.apache.log4j
+LOGGER = log4jLogger.LogManager.getLogger(__name__)
 
 class Windower(UnaryTransformer, HasWindow, HasFunc):
     """
@@ -55,7 +52,6 @@ class Windower(UnaryTransformer, HasWindow, HasFunc):
         in_col, out_col = self.getInputCol(), self.getOutputCol()
         window = self.getWindow()
         func = getattr(F, self.getFunc())
-
 
         return dataset.withColumn(out_col, func(in_col).over(window))
 
@@ -135,7 +131,7 @@ class Standardizer(UnaryTransformer):
         stats_df = dataset.agg(avg_c, std_c, num_c)
 
         return dataset.crossJoin(stats_df) \
-                .withColumn(out_col, (col(in_col) - col('mean')) / (col('std') + col("count"))) \
+                .withColumn(out_col, (col(in_col) - col('mean')) / (col('std') + 1 / sqrt(col("count")))) \
                 .drop("mean", "std", "count")
 
 
@@ -194,3 +190,74 @@ class PositionalDateEncoder(UnaryTransformer):
         encode_func = lambda c: abs(sin(c * 4 * pi / 365))
 
         return dataset.withColumn(out_col, encode_func(dayofyear(in_col)))
+
+
+class AmbiguousExampleFilter(Transformer, HasInputCol, HasMin, HasMax):
+
+    @keyword_only
+    def __init__(self, inputCol=None, min=None, max=None):
+        super(AmbiguousExampleFilter, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCol=None, min=None, max=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, df):
+        in_col = self.getInputCol()
+        min_val, max_val = self.getMin(), self.getMax()
+
+        result = df.filter((col(in_col) < min_val) | (col(in_col) > max_val))
+        return result
+
+class YearFilter(Transformer, HasInputCol, HasThreshold):
+
+    @keyword_only
+    def __init__(self, inputCol=None, threshold=None):
+        super(YearFilter, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCol=None, threshold=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, df):
+        in_col = self.getInputCol()
+        threshold = self.getThreshold()
+        result = df.filter(year(in_col) > threshold)
+        return result
+
+class PriceFilter(Transformer, HasInputCol, HasThreshold):
+
+    @keyword_only
+    def __init__(self, inputCol=None, threshold=None):
+        super(PriceFilter, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCol=None, threshold=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, df):
+        in_col = self.getInputCol()
+        threshold = self.getThreshold()
+        target = '_filter_target'
+
+        valid_symbols = (
+            df
+            .groupBy("symbol")
+            .min(in_col)
+            .toDF("symbol", target)
+            .filter(col(target) >= threshold)
+            .drop(target)
+            .distinct()
+        )
+
+        result = df.join(valid_symbols, 'symbol')
+        return result

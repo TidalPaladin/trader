@@ -16,14 +16,16 @@ MoneyType = DecimalType(5, 2)
 SRC_DIR = "/data/src"
 DEST_DIR = "/data/dest"
 
-spark = SparkSession.builder \
-        .master("spark://spark:7077") \
-    .appName("trader") \
+spark = (
+    SparkSession
+    .builder
+    .master("spark://spark:7077")
+    .appName("trader")
     .getOrCreate()
-
+)
 
 sc = spark.sparkContext
-#sc.setLogLevel("WARN")
+sc.setLogLevel("INFO")
 log4jLogger = sc._jvm.org.apache.log4j
 LOGGER = log4jLogger.LogManager.getLogger(__name__)
 LOGGER.info("pyspark script logger initialized")
@@ -50,8 +52,9 @@ class InputPipeline(object):
         StructField("adjclose", MoneyType, False)])
 
     @staticmethod
-    def write_records(df, path, partitions=4):
-        ( df.repartition(partitions)
+    def write_records(df, path, partitions=None):
+        df = df.repartition(partitions) if partitions else df
+        ( df
             .write
             .format("tfrecords")
             .option('recordType', 'SequenceExample')
@@ -79,6 +82,14 @@ class InputPipeline(object):
         return Window.orderBy("date").partitionBy("symbol").rowsBetween(*range_arg)
 
     def get_stages(self):
+
+        # Filter by date, price, and percent change
+        date_filter = YearFilter(inputCol='date', threshold=self.date_cutoff)
+        price_filter = PriceFilter(inputCol='adjclose', threshold=self.price_cutoff)
+        change_filter = [
+                AmbiguousExampleFilter(inputCol=self.bucket_col, min=-5.0, max=-2.0),
+                AmbiguousExampleFilter(inputCol=self.bucket_col, min=2.0, max=5.0)
+        ]
 
         # Rescale based on adjclose / close ratio
         rescale_in = ['high', 'low', 'close']
@@ -114,6 +125,7 @@ class InputPipeline(object):
                 for i, o, t in zip(change_in, change_out, change_tar)
         ]
 
+
         # Discretize future percent change
         # TODO add option to keep more output cols than self.bucket_col
         bucketizer = Bucketizer(
@@ -141,9 +153,12 @@ class InputPipeline(object):
         size_enf = WindowSizeEnforcer(inputCols=win_size_in, numFeatures=self.past_window_size)
 
         stages = {
+                'date': [date_filter],
+                'price': [price_filter],
                 'rescale': rescalers,
                 'future': future,
                 'change': change,
+                'ambig': change_filter,
                 'bucketizer': [bucketizer],
                 'standard': standard,
                 'position': [position],
@@ -173,61 +188,49 @@ class InputPipeline(object):
 
     @classmethod
     def read(cls, path):
+        LOGGER.info("Preparing to read path: " + path)
+
+        # Symbol regex parsing can cause compat issues
+        # Instead, hash each input file to identify stock
         symbol_col = hash(input_file_name())
-        result = (spark
-                    .read
-                    .csv(path=path, header=True, schema=cls.SCHEMA)
-                    .withColumn("symbol", symbol_col)
-                    .repartition(200))
-        return result
 
-    @staticmethod
-    def filter_year(df, cutoff):
-        return df.filter(year("date") > cutoff)
-
-    @staticmethod
-    def filter_price(data, cutoff):
         result = (
-            data.groupBy("symbol")
-                .min("close")
-                .filter(col('min(close)') >= cutoff)
-                .select("symbol")
-                .join(data, 'symbol')
+            spark
+            .read
+            .csv(path=path, header=True, schema=cls.SCHEMA)
+            .withColumn("symbol", symbol_col)
         )
-
         return result
-
 
     def getResult(self, stages):
 
-        if self._result_df: return self._result_df
+        if self._result_df:
+            LOGGER.debug("Using cached getResult()")
+            return self._result_df
+
+        LOGGER.debug("No cached getResult() available")
 
         pipeline = Pipeline(stages=stages)
-        read_target = os.path.join(self.path, "*")
 
         # Read raw data
         raw_df = (
             InputPipeline
-                .read(read_target)
-                .repartition(200, "symbol")
+            .read(self.path)
+            .repartition(200)
+            .cache()
         )
-        raw_df.cache()
-
-        # Filter by date and by price
-        _ = InputPipeline.filter_year(raw_df, self.date_cutoff)
-        _ = InputPipeline.filter_price(_, self.price_cutoff)
-        _ = _.cache()
-        raw_df.unpersist()
 
         # Apply pipeline
         _ = (
             pipeline
-                .fit(_)
-                .transform(_)
-                .dropna()
+            .fit(raw_df)
+            .transform(raw_df)
+            .dropna()
+            .cache()
         )
+        raw_df.unpersist()
 
-        self._result_df = _.cache()
+        self._result_df = _
         return self._result_df
 
     def getFeatures(self, stages):
@@ -253,79 +256,79 @@ class InputPipeline(object):
         _ = self.getResult(stages).select(*feature_cols, label_col, change_col)
         _ = _.filter(abs(col('change')) <= 50.0)
 
-
-        # Sample labels equally
-        f = _.groupby('label').count()
-        f_min_count = f.select('count').agg(min('count').alias('minVal')).collect()[0].minVal
-        f = f.withColumn('frac',f_min_count/col('count'))
-        frac = dict(f.select('label', 'frac').collect())
-        _ = _.sampleBy('label', fractions=frac)
-
-        self._features_df = _.cache()
+        self._features_df = _
         return self._features_df
-
-def make_records():
-
-
-
-    kwargs = {
-        'date_cutoff': 2010,
-        'future_window_size' : 3,
-        'past_window_size' : 180,
-        'price_cutoff' : 1.0,
-        'buckets' : [-float('inf'), -2, 2, float('inf')],
-        'bucket_col' : '%_close'
-    }
-
-
-    ipl = InputPipeline(SRC_DIR, **kwargs)
-    stages = ipl.get_stages()
-    stages = stages.values()
-
-    features_df = ipl.getFeatures(stages)
-    out_path = os.path.join(DEST_DIR, 'tfrecords')
-
-
-    features_df.show()
-    features_df.groupBy('label').count().show()
-    features_df.count()
-
-    InputPipeline.write_records(features_df, out_path, partitions=200)
-
-
-def explore():
-
-
-    kwargs = {
-        'date_cutoff': 2017,
-        'future_window_size' : 5,
-        'past_window_size' : 5,
-        'price_cutoff' : 1.0,
-        'buckets' : [-float('inf'), -15.0, -5.0 -2, 2, 2.5, 5.0, 15.0, float('inf')],
-        'bucket_col' : '%_close'
-    }
-
-    ipl = InputPipeline(SRC_DIR, **kwargs)
-    stages = ipl.get_stages()
-    stages = stages.values()
-
-    features_df = ipl.getFeatures(stages)
-    results_df = ipl.getResult(stages)
-    features_df.collect()
-    features_df.show()
-
-    features_df.groupBy("label").count().show()
-    print(features_df.count())
-
-    features_df.groupBy("label").count() \
-    .write.mode("overwrite").csv(DEST_DIR + '/test')
-
-    #IPython.embed()
 
 if __name__ == '__main__':
 
     if len(sys.argv) > 1 and sys.argv[1] == 'explore':
-        explore()
-    else:
-        make_records()
+        LOGGER.info("Running data exploration")
+        kwargs = {
+            'date_cutoff': 2017,
+            'future_window_size' : 3,
+            'past_window_size' : 5,
+            'price_cutoff' : 1.0,
+            'buckets' : [-float('inf'), -2, 2, float('inf')],
+            'bucket_col' : '%_close',
+        }
+        in_path = os.path.join(SRC_DIR, "AA*.csv")
 
+    else:
+        LOGGER.info("Running TFRecord generation")
+        kwargs = {
+            'date_cutoff': 2015,
+            'future_window_size' : 3,
+            'past_window_size' : 180,
+            'price_cutoff' : 1.0,
+            'buckets' : [-float('inf'), -2, 2, float('inf')],
+            'bucket_col' : '%_close'
+        }
+        in_path = os.path.join(SRC_DIR, "*.csv")
+
+    # Create pipeline
+    ipl = InputPipeline(in_path, **kwargs)
+    stages = ipl.get_stages()
+    stages = stages.values()
+
+    # Extract raw results / features
+    features_df = ipl.getFeatures(stages).cache()
+    results_df = ipl.getResult(stages).cache()
+
+    tfrec_path = os.path.join(DEST_DIR, 'tfrecords')
+    metric_path = os.path.join(DEST_DIR, 'stats')
+
+    (
+        features_df
+        .groupBy("label")
+        .count()
+        .repartition(1)
+        .write
+        .mode('overwrite')
+        .csv(header=True, path=os.path.join(metric_path, "count"))
+    )
+
+    (
+        features_df
+        .describe()
+        .repartition(1)
+        .write
+        .mode('overwrite')
+        .csv(header=True, path=os.path.join(metric_path, "feature_stats"))
+    )
+
+    (
+        results_df
+        .describe()
+        .repartition(1)
+        .write
+        .mode('overwrite')
+        .csv(header=True, path=os.path.join(metric_path, "raw_stats"))
+    )
+
+
+    for i in range(len(kwargs['buckets'])- 1):
+        LOGGER.info("Writing label recs: %s" % i)
+        per_label_examples = features_df.filter(col('label') == i)
+
+        out_path = os.path.join(tfrec_path, 'label_%s' % i)
+        InputPipeline.write_records(per_label_examples, out_path)

@@ -78,9 +78,22 @@ def fold_data_regress(x):
     label = x['change']
     return (features, label)
 
-def read_tfrecords():
 
-    filenames = [os.path.join(TFRECORD_DIR, x) for x in os.listdir(TFRECORD_DIR) if 'part-r-' in x and not x[0] == '.']
+def read_dataset(path):
+
+    globs = [os.path.join(path, x, 'part-r-*') for x in os.listdir(path) if not x[0] == '.']
+    tfrecord_raw = tf.data.Dataset.from_tensor_slices(globs)
+
+    block_len = 4
+    cycle_len = len(globs)
+
+
+    print(globs)
+    tfrecord = tfrecord_raw.interleave(lambda x: read_tfrecords(x), cycle_length=cycle_len, block_length=block_len)
+    return tfrecord
+
+
+def read_tfrecords(glob):
 
     feature_col = tf.io.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True)
 
@@ -100,13 +113,23 @@ def read_tfrecords():
     def _parse_function(example_proto):
         return tf.io.parse_single_example(example_proto, feature_description)
 
+
+    print(glob)
+    filenames = tf.data.Dataset.list_files(glob)
+    print(filenames)
     ds = tf.data.TFRecordDataset(filenames)
     return ds.map(_parse_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+def print_records(ds, num=100):
+
+    for x in ds.take(num):
+        feature, label = x
+        print(feature[0])
 
 
 def train_model(model, hparams, num_epochs, callbacks):
 
-    raw_data = read_tfrecords()
+    raw_data = read_dataset(TFRECORD_DIR)
 
     if MODE == 'regression':
         processed_data = raw_data.map(preprocess_regress)
@@ -116,6 +139,7 @@ def train_model(model, hparams, num_epochs, callbacks):
         ds = processed_data.map(fold_data)
 
     train = ds.skip(VALIDATION_SIZE).repeat()
+    #print_records(train)
     validate = ds.take(VALIDATION_SIZE).repeat()
 
     validate_batch = VALIDATION_SIZE // hparams[HP_BATCH_SIZE]
@@ -232,6 +256,7 @@ if __name__ == '__main__':
     model.summary()
 
     #tune_hparams(model, callbacks)
+
 
 
     hparams = {
