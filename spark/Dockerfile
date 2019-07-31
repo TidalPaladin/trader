@@ -4,7 +4,7 @@ USER 0
 
 # Install python dependencies
 RUN apt-get update && apt-get install wget
-RUN pip install numpy ipython pyspark==2.4.3
+RUN pip install numpy ipython pyspark==2.4.3 absl-py
 
 # Fetch spark-tensorflow-connector
 RUN wget -O /opt/bitnami/spark/jars/spark-tf-connector.jar \

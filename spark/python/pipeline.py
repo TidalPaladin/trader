@@ -261,3 +261,92 @@ class PriceFilter(Transformer, HasInputCol, HasThreshold):
 
         result = df.join(valid_symbols, 'symbol')
         return result
+
+class FeatureExtractor(Transformer, HasInputCols, HasOutputCols):
+
+    features_t = ArrayType(FloatType())
+    label_t = IntegerType()
+    change_t = FloatType()
+
+    @keyword_only
+    def __init__(self, inputCols=None, outputCols=None):
+        super(FeatureExtractor, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCols=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, df):
+        in_cols, out_cols = self.getInputCols(), self.getOutputCols()
+
+        feature_cols = [
+            col(i).cast(FeatureExtractor.features_t).alias(o)
+            for i, o in zip(in_cols, out_cols)
+        ]
+        label_col = col('label').cast(FeatureExtractor.label_t).alias('label')
+        change_col = col('%_close').cast(FeatureExtractor.change_t).alias('change')
+
+        # Get features output
+        result = (
+            df.select(*feature_cols, label_col, change_col)
+            .filter(abs(col('change')) <= 50.0)
+        )
+
+        return result
+
+class DailyChange(Transformer, HasInputCols, HasOutputCol):
+
+    @keyword_only
+    def __init__(self, inputCols=None, outputCol=None):
+        super(DailyChange, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCol=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, df):
+        in_cols, out_col = self.getInputCols(), self.getOutputCol()
+        c1, c2 = in_cols
+        return df.withColumn(out_col, col(c2) - col(c1))
+
+class FeatureExtractor(Transformer, HasInputCols, HasOutputCols):
+
+    features_t = ArrayType(FloatType())
+    label_t = IntegerType()
+    change_t = FloatType()
+
+    @keyword_only
+    def __init__(self, inputCols=None, outputCols=None):
+        super(FeatureExtractor, self).__init__()
+        kwargs = self._input_kwargs
+        self.setParams(**kwargs)
+
+    @keyword_only
+    def setParams(self, inputCols=None, outputCols=None):
+        kwargs = self._input_kwargs
+        return self._set(**kwargs)
+
+    def _transform(self, df):
+        in_cols, out_cols = self.getInputCols(), self.getOutputCols()
+
+        feature_cols = [
+            col(i).cast(FeatureExtractor.features_t).alias(o)
+            for i, o in zip(in_cols, out_cols)
+        ]
+        label_col = col('label').cast(FeatureExtractor.label_t).alias('label')
+        change_col = col('%_close').cast(FeatureExtractor.change_t).alias('change')
+
+        # Get features output
+        result = (
+            df.select(*feature_cols, label_col, change_col)
+            .filter(abs(col('change')) <= 50.0)
+        )
+
+        return result
+
