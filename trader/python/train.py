@@ -24,28 +24,16 @@ hparam_dir = ''
 HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([64, 256, 512]))
 HP_LR = hp.HParam('learning_rate', hp.RealInterval(0.001, 0.1))
 
-FEATURE_COL = tf.io.FixedLenFeature([], tf.float32)
-# Create a description of the features.
-# TFREC_SPEC = {
-#     'high': FEATURE_COL,
-#     'low': FEATURE_COL,
-#     'open': FEATURE_COL,
-#     'close': FEATURE_COL,
-#     'volume': FEATURE_COL,
-#     'position': FEATURE_COL,
-#     'label': tf.io.FixedLenFeature([], tf.int64, default_value=2),
-#     'change': tf.io.FixedLenFeature([], tf.float32, default_value=2),
-#     'symbol': tf.io.FixedLenFeature([], tf.int64, default_value=2),
-#     'date_f': tf.io.FixedLenFeature([], tf.int64, default_value=2),
-# }
+# Number of features in written TFRecord files
+TFREC_FEATURES = 6
 
 TFREC_SPEC = {
-    'features': tf.io.FixedLenSequenceFeature([6], tf.float32),
+    'features': tf.io.FixedLenSequenceFeature([TFREC_FEATURES], tf.float32),
     'change': tf.io.FixedLenFeature([], tf.float32),
     'label': tf.io.FixedLenFeature([], tf.int64),
 }
 
-def read_basic():
+def read_tfrecs():
 
     def _parse_tfrec(example_proto):
         seq_f = {'features': TFREC_SPEC['features']}
@@ -55,105 +43,12 @@ def read_basic():
     # Build a list of input TFRecord files
     target = Path(FLAGS.src).glob(FLAGS.glob)
     target = [x.as_posix() for x in target]
+
+    # Read files to dataset and apply parsing function
     examples = tf.data.TFRecordDataset(list(target)).map(_parse_tfrec)
 
-    ds = examples.map(lambda con, seq: (seq['features'], con[FLAGS.label]))
-    print(ds)
-    return ds
-
-def read_dataset():
-
-    def _parse_tfrec(example_proto):
-        return tf.io.parse_single_example(example_proto, TFREC_SPEC)
-
-    # Build a list of input TFRecord files
-    target = Path(FLAGS.src).glob(FLAGS.glob)
-    tfrecord_raw = tf.data.Dataset.from_tensor_slices(list(target))
-
-    def read_func(x):
-
-        # Read TFRecord file and parse examples
-        ds = tf.data.TFRecordDataset(x)
-        ds = ds.map(lambda x : _parse_tfrec(x))
-
-        # Flatten dict into dense (features, label) tensor structure
-        labels = ds.map(lambda x: x.get(FLAGS.label))
-        features = ds.map(lambda x: tf.stack([tf.cast(x[k], tf.int64) for k in FLAGS.features]))
-
-        # Assemble timeseries data with rollup
-        features = features.window(size=FLAGS.past, shift=1, stride=1, drop_remainder=True)
-        features = features.flat_map(lambda x: x.batch(FLAGS.past, drop_remainder=True))
-
-        # Zip timeseries features with labels
-        return tf.data.Dataset.zip((features, labels))
-
-    # Interleave training examples from each TFRecord file
-    tfrecord = tfrecord_raw.interleave(
-            lambda x: read_func(x),
-            cycle_length=1,
-            block_length=1,
-    )
-    return tfrecord
-
-def read_csv():
-
-    def _parse_tfrec(example_proto):
-        return tf.io.parse_single_example(example_proto, TFREC_SPEC)
-
-    # Build a list of input CSV files
-    target = Path(FLAGS.src).glob(FLAGS.glob)
-    target = [x.as_posix() for x in target]
-    tfrecord_raw = tf.data.Dataset.from_tensor_slices(list(target))
-
-    # Open a CSV file and read header to match feature column indices
-    with open(target[0],'r') as f:
-        header = f.readline().split(',')
-
-        feature_index = sorted([header.index(x) for x in FLAGS.features])
-        label_index = [header.index(FLAGS.label)]
-        assert(feature_index and label_index)
-
-        feature_type = [tf.float32 for x in feature_index]
-        label_type = [tf.float32]
-
-    def read_func(x):
-
-        # Read CSV feature columns
-        features = tf.data.experimental.CsvDataset(
-                x,
-                record_defaults=feature_type,
-                header=True,
-                select_cols=feature_index
-        )
-
-        # Read CSV label column
-        label = tf.data.experimental.CsvDataset(
-                x,
-                record_defaults=label_type,
-                header=True,
-                select_cols=label_index
-        )
-        label = label.map(lambda x: tf.squeeze(x))
-
-        # Assemble timeseries feature data with rollup
-        timeseries = (
-                features
-                .map(lambda *x: tf.stack([v for v in x]))
-                .window(size=FLAGS.past, shift=1, stride=1, drop_remainder=True)
-                .flat_map(lambda x: x.batch(FLAGS.past, drop_remainder=True))
-        )
-
-        # Zip timeseries features with labels
-        result = tf.data.Dataset.zip((timeseries, label))
-        return result
-
-    # Interleave training examples from each TFRecord file
-    tfrecord = tfrecord_raw.interleave(
-            lambda x: read_func(x),
-            #cycle_length=1,
-            #block_length=1,
-    )
-    return tfrecord
+    # Flatten dict to tuple of (feature tensor, label)
+    return examples.map(lambda con, seq: (seq['features'], con[FLAGS.label]))
 
 def preprocess():
     """
@@ -163,10 +58,7 @@ def preprocess():
     """
 
     # Detect CSV vs TFRecord
-    if 'csv' in FLAGS.glob.lower():
-        ds = read_csv()
-    else:
-        ds = read_basic()
+    ds = read_tfrecs()
 
     for x in ds.take(1):
         print(x)
