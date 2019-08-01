@@ -1,6 +1,7 @@
 #!python3
 import os
 import tensorflow as tf
+import numpy as np
 from datetime import datetime
 
 from tensorflow.keras.callbacks import ModelCheckpoint, ProgbarLogger
@@ -120,12 +121,12 @@ def train_model(model, train, validate):
         steps_per_epoch = 100
         validation_steps = 1
         model_callbacks = [ tf.keras.callbacks.LambdaCallback(
-                on_epoch_end=lambda x, y: quick_eval(model, validate, FLAGS.mode)
+                on_epoch_end=lambda x, y: quick_eval(model, train, FLAGS.mode)
         )]
 
     else:
         model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
-        steps_per_epoch=steps_per_epoch
+        steps_per_epoch=FLAGS.steps_per_epoch
         validation_data=validate,
         validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE],
 
