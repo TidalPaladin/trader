@@ -89,10 +89,10 @@ def save_summary(model, filepath, line_length=80):
                     line_length=line_length
             )
 
-def quick_eval(model, train, mode):
+def quick_eval(model, train, mode, top=10):
     for x in train.take(1):
         f, l = x
-        out, truth = model.predict(f), l.numpy()
+        out, truth = model.predict(f)[:top], l.numpy()[:top]
         if mode == 'classification':
             print("Predictions (pmf, argmax, truth):")
             for o, t in zip(out, truth):
