@@ -18,7 +18,6 @@ case class Config(
     bucketize: Seq[Int] = Seq(),
     in: String = "",
     tfrecord: Boolean = false,
-    csv: Boolean = false,
     past: Int = 128,
     shards: Int = 100
 )
@@ -151,36 +150,6 @@ object Trader {
         .save(config.out + "/tfrecords")
 
     }
-
-
-    if(config.csv) {
-      log.info("Writing CSV files")
-
-      val csv_df = result_df
-        .select(
-          vec_to_array($"features"),
-          $"symbol",
-          unix_timestamp($"date"),
-          $"label",
-          $"change"
-        )
-        .toDF("high", "low", "open", "close", "volume", "position", "symbol", "date", "label", "change")
-
-      csv_df
-        .write
-        .partitionBy("symbol")
-        .option("header", "true")
-        .csv(config.out + "/tfrec_csv")
-
-
-
-      //val csv_df = display_df
-        //.select(struct($"features".toArray()), $"label", $"change")
-
-      //csv_df.show()
-      //csv_df.printSchema
-    }
-
   }
 
   def main(args: Array[String]) {
@@ -239,10 +208,6 @@ object Trader {
         opt[Unit]("tfrecord")
           .action((_, c) => c.copy(tfrecord = true))
           .text("write final dataset to TFRecord files"),
-
-        opt[Unit]("csv")
-          .action((_, c) => c.copy(csv = true))
-          .text("write final dataset to CSV files"),
 
         help("help").text("prints this usage text"),
 
