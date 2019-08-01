@@ -60,9 +60,6 @@ def preprocess():
     # Detect CSV vs TFRecord
     ds = read_tfrecs()
 
-    for x in ds.take(1):
-        print(x)
-
     # Train / test split
     if FLAGS.validation_size > 0 and not FLAGS.speedrun:
         train = ds.skip(FLAGS.validation_size)
@@ -170,11 +167,6 @@ def main(argv):
 
     train, validate = preprocess()
 
-    for x in train.take(1):
-        f, l = x
-        print("Dataset feature tensor shape: %s" % f.shape)
-        print("Dataset label tensor shape: %s" % l.shape)
-        print("First batch labels: %s" % l.numpy())
 
     inputs = layers.Input(shape=[128, len(FLAGS.features)], dtype=tf.float32)
     model = construct_model()
@@ -184,11 +176,21 @@ def main(argv):
         print("Loading weights from %s" % FLAGS.resume)
         model.load_weights(FLAGS.resume)
 
+
     if FLAGS.summary:
         out_path = os.path.join(FLAGS.artifacts_dir, 'summary.txt')
         model.summary()
         save_summary(model, out_path)
-        return
+
+        with np.printoptions(precision=3):
+            for x in train.take(1):
+                f, l = x
+                print("Dataset feature tensor shape: %s" % f.shape)
+                print("Dataset label tensor shape: %s" % l.shape)
+                print("First batch labels: %s" % l.numpy())
+                print("First batch element features (truncated):")
+                print(f.numpy()[0][:10])
+            return
 
     train_model(model, train, validate)
 
