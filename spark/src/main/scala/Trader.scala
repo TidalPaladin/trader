@@ -4,6 +4,9 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.feature._
 import org.apache.spark.sql.SparkSession
 import scopt.OParser
+import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.ml.linalg.{Vector, VectorUDT, DenseVector}
+import org.apache.spark.sql.expressions.Window
 
 import org.apache.spark.sql.types._
 import org.apache.log4j.{Level, Logger}
@@ -15,22 +18,41 @@ case class Config(
     bucketize: Seq[Int] = Seq(),
     in: String = "",
     tfrecord: Boolean = false,
-    csv: Boolean = false
+    csv: Boolean = false,
+    past: Int = 128,
+    shards: Int = 100
 )
 
 object Trader {
 
   @transient lazy val log = Logger.getLogger(getClass.getName)
-  val spark = SparkSession.builder.appName("trader").getOrCreate()
+  val spark = SparkSession
+    .builder
+    .appName("trader")
+    //.config("spark.jars", "/to/spark-tensorflow-connector_2.11-1.12.0.jar")
+    .getOrCreate()
+
   val sc = spark.sparkContext
   import spark.implicits._
 
+  val toArr: Any => Array[Double] = _.asInstanceOf[DenseVector].toArray
+  val vec_to_array = udf(toArr)
+
   def run(config: Config) {
+
+    val schema = StructType(
+      StructField("date", DateType) ::
+      StructField("volume", IntegerType) ::
+      StructField("open", FloatType) ::
+      StructField("close", FloatType) ::
+      StructField("high", FloatType) ::
+      StructField("low", FloatType) ::
+      StructField("adjclose", FloatType) :: Nil)
 
     val raw_df = spark
       .read
       .option("header", "true")
-      .option("inferSchema", "true")
+      .schema(schema)
       .csv(config.in)
       .withColumn("symbol", hash(input_file_name()))
 
@@ -77,11 +99,20 @@ object Trader {
     val stages = Array(vectorizer, standardizer, labeler)
     val pipeline = new Pipeline().setStages(stages)
 
-    val result_df = pipeline
+    val raw_result = pipeline
       .fit(change_df)
       .transform(change_df)
+      .withColumn("cast", $"change".cast(FloatType))
+      .drop($"change")
+      .withColumnRenamed("cast", "change")
+      .withColumn("cast", $"label".cast(IntegerType))
+      .drop($"label")
+      .withColumnRenamed("cast", "label")
+      .cache()
+
+    val result_df = raw_result
       .repartition($"symbol")
-      .sortWithinPartitions(desc($"date"))
+      .sortWithinPartitions(desc("date"))
       .cache()
 
     val display_df = result_df.select("symbol", "date", "features", "label", "change")
@@ -96,17 +127,64 @@ object Trader {
     if(config.tfrecord) {
       log.info("Writing TFRecords")
 
+      val past_window = Window
+        .partitionBy("symbol")
+        .orderBy(desc("date"))
+        .rowsBetween(Window.currentRow - config.past + 1, Window.currentRow)
+
+      val dense_df = result_df
+        .select($"symbol", $"date", $"features", $"label", $"change")
+        .withColumn("dense_features", collect_list(vec_to_array($"features")).over(past_window))
+        .drop("features", "date", "symbol")
+        .withColumnRenamed("dense_features", "features")
+        .filter(size($"features") === config.past)
+        .cache()
+
+      dense_df.printSchema
+
+      dense_df
+        .repartition(config.shards)
+        .write
+        .format("tfrecords")
+        .mode("overwrite")
+        .option("recordType", "SequenceExample")
+        .save(config.out + "/tfrecords")
+
     }
+
 
     if(config.csv) {
       log.info("Writing CSV files")
 
-      display_df
+      val csv_df = result_df
+        .select(
+          vec_to_array($"features"),
+          $"symbol",
+          unix_timestamp($"date"),
+          $"label",
+          $"change"
+        )
+        .toDF("high", "low", "open", "close", "volume", "position", "symbol", "date", "label", "change")
+
+      csv_df
+        .write
+        .partitionBy("symbol")
+        .option("header", "true")
+        .csv(config.out + "/tfrec_csv")
+
+
+
+      //val csv_df = display_df
+        //.select(struct($"features".toArray()), $"label", $"change")
+
+      //csv_df.show()
+      //csv_df.printSchema
     }
 
   }
 
   def main(args: Array[String]) {
+    Logger.getRootLogger.setLevel(Level.WARN)
     log.info("Started trader")
 
     val builder = OParser.builder[Config]
@@ -129,6 +207,24 @@ object Trader {
           )
           .action((x, c) => c.copy(date = x))
           .text("limit to records newer than <date>"),
+
+        opt[Int]('p', "past")
+          .valueName("<int>")
+          .validate(x =>
+            if (x > 0) success
+            else failure("Value <int> must be >0")
+          )
+          .action((x, c) => c.copy(date = x))
+          .text("aggregate past <int> records into an example"),
+
+        opt[Int]('s', "shards")
+          .valueName("<int>")
+          .validate(x =>
+            if (x > 0) success
+            else failure("Value <int> must be >0")
+          )
+          .action((x, c) => c.copy(date = x))
+          .text("split the TFRecord set into <int> shards"),
 
         opt[Int]("quantize")
           .valueName("<int>")
@@ -163,4 +259,3 @@ object Trader {
     }
   }
 }
-

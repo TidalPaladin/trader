@@ -7,6 +7,7 @@ services:
 
   spark:
     build: ./spark
+    image: trader-spark
     container_name: trader-spark
     hostname: spark
     networks: [sparknet]
@@ -16,21 +17,20 @@ services:
     volumes:
       - ${SRC_DIR}:/data/src
       - ${DEST_DIR}:/data/dest
-      - /home/tidal/Documents/trader/spark/python:/app
+        #- /home/tidal/Documents/spark/target/scala-2.11:/app
     environment:
       - SPARK_MODE=master
-      - SRC_DIR
-      - DEST_DIR
+      - SRC_DIR=/data/src
+      - DEST_DIR=/data/dest
 
   spark-worker:
-    build: ./spark
+    image: trader-spark
     depends_on:
       - spark
     networks: [sparknet]
     volumes:
       - ${SRC_DIR}:/data/src
       - ${DEST_DIR}:/data/dest
-      - /home/tidal/Documents/trader/spark/python:/app
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark:7077
@@ -42,10 +42,13 @@ services:
   trader:
     build: ./trader
     container_name: trader
+    networks: [sparknet]
     runtime: nvidia
     volumes:
-      - ${DEST_DIR}/tfrecords:/data/tfrecords
+      - ${DEST_DIR}:/data/
       - ${ARTIFACT_DIR}:/artifacts
       - /home/tidal/Documents/trader/trader/python:/app
     environment:
       - CUDA_VISIBLE_DEVICES
+      - SRC_DIR=/data/tfrecords
+      - ARTIFACTS_DIR=/artifacts

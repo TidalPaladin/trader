@@ -1,5 +1,7 @@
 FROM tensorflow/tensorflow:2.0.0b1-gpu-py3 as base
 
+RUN pip install pyspark
+
 VOLUME [ "/data/tfrecords", "/artifacts" ]
 
 # Expose Tensorboard ports

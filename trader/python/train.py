@@ -5,159 +5,219 @@ from datetime import datetime
 
 from tensorflow.keras.callbacks import ModelCheckpoint, ProgbarLogger
 
+from pathlib import Path
+from glob import glob as glob_func
 from util import *
 from model import *
 
 from tensorboard.plugins.hparams import api as hp
+import tensorflow.feature_column as fc
+from tensorflow.keras.layers import *
 
-TFRECORD_DIR = "/data/tfrecords"
-ARTIFACTS_DIR = "/artifacts"
+from absl import app, logging
+from flags import FLAGS
 
-date_prefix = datetime.now().strftime("%Y%m%d-%H%M%S")
-checkpoint_dir = os.path.join(ARTIFACTS_DIR, 'checkpoint', date_prefix)
-tb_dir=os.path.join(ARTIFACTS_DIR, 'tblogs')
-hparam_dir=tb_dir
-
-os.makedirs(tb_dir, exist_ok=True)
-os.makedirs(checkpoint_dir, exist_ok=True)
-os.makedirs(hparam_dir, exist_ok=True)
+hparams = dict()
+callbacks = list()
+hparam_dir = ''
 
 HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([64, 256, 512]))
 HP_LR = hp.HParam('learning_rate', hp.RealInterval(0.001, 0.1))
 
-hparam_objs = [HP_LR, HP_BATCH_SIZE]
+FEATURE_COL = tf.io.FixedLenFeature([], tf.float32)
+# Create a description of the features.
+# TFREC_SPEC = {
+#     'high': FEATURE_COL,
+#     'low': FEATURE_COL,
+#     'open': FEATURE_COL,
+#     'close': FEATURE_COL,
+#     'volume': FEATURE_COL,
+#     'position': FEATURE_COL,
+#     'label': tf.io.FixedLenFeature([], tf.int64, default_value=2),
+#     'change': tf.io.FixedLenFeature([], tf.float32, default_value=2),
+#     'symbol': tf.io.FixedLenFeature([], tf.int64, default_value=2),
+#     'date_f': tf.io.FixedLenFeature([], tf.int64, default_value=2),
+# }
 
-TOTAL_STEPS = 64 * 4000
-VALIDATION_SIZE= 1000
-EPOCHS = 100
+TFREC_SPEC = {
+    'features': tf.io.FixedLenSequenceFeature([6], tf.float32),
+    'change': tf.io.FixedLenFeature([], tf.float32),
+    'label': tf.io.FixedLenFeature([], tf.int64),
+}
 
-levels = [3, 3, 5, 2]
+def read_basic():
 
-MODE = ''
+    def _parse_tfrec(example_proto):
+        seq_f = {'features': TFREC_SPEC['features']}
+        context_f = {x: TFREC_SPEC[x] for x in ['change', 'label']}
+        return tf.io.parse_single_sequence_example(example_proto, context_f, seq_f)
 
-#feature_keys = ['close', 'volume', 'position']
-feature_keys = ['close', 'volume', 'position']
-standardize_keys = ['close', 'volume']
+    # Build a list of input TFRecord files
+    target = Path(FLAGS.src).glob(FLAGS.glob)
+    target = [x.as_posix() for x in target]
+    examples = tf.data.TFRecordDataset(list(target)).map(_parse_tfrec)
 
-FEATURES_T = tf.float16
-LABEL_T = tf.uint8
+    ds = examples.map(lambda con, seq: (seq['features'], con[FLAGS.label]))
+    print(ds)
+    return ds
 
+def read_dataset():
 
-def fold_data(x):
-    features = tf.stack([x[k] for k in feature_keys])
-    features = tf.transpose(features)
-    label = x['label']
-    return (features, label)
+    def _parse_tfrec(example_proto):
+        return tf.io.parse_single_example(example_proto, TFREC_SPEC)
 
-def preprocess(x):
+    # Build a list of input TFRecord files
+    target = Path(FLAGS.src).glob(FLAGS.glob)
+    tfrecord_raw = tf.data.Dataset.from_tensor_slices(list(target))
 
-    #for k in standardize_keys:
-    #    x[k] = standardize(x[k], 0)
+    def read_func(x):
 
-    for k in feature_keys:
-        x[k] = tf.cast(x[k], FEATURES_T)
+        # Read TFRecord file and parse examples
+        ds = tf.data.TFRecordDataset(x)
+        ds = ds.map(lambda x : _parse_tfrec(x))
 
-    x['label'] = tf.cast(x['label'], LABEL_T)
-    out_keys = feature_keys + ['label']
+        # Flatten dict into dense (features, label) tensor structure
+        labels = ds.map(lambda x: x.get(FLAGS.label))
+        features = ds.map(lambda x: tf.stack([tf.cast(x[k], tf.int64) for k in FLAGS.features]))
 
-    return {k: x[k] for k in out_keys}
+        # Assemble timeseries data with rollup
+        features = features.window(size=FLAGS.past, shift=1, stride=1, drop_remainder=True)
+        features = features.flat_map(lambda x: x.batch(FLAGS.past, drop_remainder=True))
 
-def preprocess_regress(x):
+        # Zip timeseries features with labels
+        return tf.data.Dataset.zip((features, labels))
 
-
-    for k in feature_keys:
-        x[k] = tf.cast(x[k], FEATURES_T)
-
-    out_keys = feature_keys + ['change']
-
-    return {k: x[k] for k in out_keys}
-
-def fold_data_regress(x):
-    features = tf.stack([x[k] for k in feature_keys])
-    features = tf.transpose(features)
-    label = x['change']
-    return (features, label)
-
-
-def read_dataset(path):
-
-    globs = [os.path.join(path, x, 'part-r-*') for x in os.listdir(path) if not x[0] == '.']
-    tfrecord_raw = tf.data.Dataset.from_tensor_slices(globs)
-
-    block_len = 4
-    cycle_len = len(globs)
-
-
-    print(globs)
-    tfrecord = tfrecord_raw.interleave(lambda x: read_tfrecords(x), cycle_length=cycle_len, block_length=block_len)
+    # Interleave training examples from each TFRecord file
+    tfrecord = tfrecord_raw.interleave(
+            lambda x: read_func(x),
+            cycle_length=1,
+            block_length=1,
+    )
     return tfrecord
 
+def read_csv():
 
-def read_tfrecords(glob):
+    def _parse_tfrec(example_proto):
+        return tf.io.parse_single_example(example_proto, TFREC_SPEC)
 
-    feature_col = tf.io.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True)
+    # Build a list of input CSV files
+    target = Path(FLAGS.src).glob(FLAGS.glob)
+    target = [x.as_posix() for x in target]
+    tfrecord_raw = tf.data.Dataset.from_tensor_slices(list(target))
 
-    # Create a description of the features.
-    feature_description = {
-        'label': tf.io.FixedLenFeature([], tf.int64, default_value=2),
-        'change': tf.io.FixedLenFeature([], tf.float32, default_value=2),
-        'weight': tf.io.FixedLenFeature([], tf.float32, default_value=2),
-        'high': feature_col,
-        'low': feature_col,
-        'open': feature_col,
-        'close': feature_col,
-        'volume': feature_col,
-        'position': feature_col,
-    }
+    # Open a CSV file and read header to match feature column indices
+    with open(target[0],'r') as f:
+        header = f.readline().split(',')
 
-    def _parse_function(example_proto):
-        return tf.io.parse_single_example(example_proto, feature_description)
+        feature_index = sorted([header.index(x) for x in FLAGS.features])
+        label_index = [header.index(FLAGS.label)]
+        assert(feature_index and label_index)
 
+        feature_type = [tf.float32 for x in feature_index]
+        label_type = [tf.float32]
 
-    print(glob)
-    filenames = tf.data.Dataset.list_files(glob)
-    print(filenames)
-    ds = tf.data.TFRecordDataset(filenames)
-    return ds.map(_parse_function, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    def read_func(x):
 
-def print_records(ds, num=100):
+        # Read CSV feature columns
+        features = tf.data.experimental.CsvDataset(
+                x,
+                record_defaults=feature_type,
+                header=True,
+                select_cols=feature_index
+        )
 
-    for x in ds.take(num):
-        feature, label = x
-        print(feature[0])
+        # Read CSV label column
+        label = tf.data.experimental.CsvDataset(
+                x,
+                record_defaults=label_type,
+                header=True,
+                select_cols=label_index
+        )
+        label = label.map(lambda x: tf.squeeze(x))
 
+        # Assemble timeseries feature data with rollup
+        timeseries = (
+                features
+                .map(lambda *x: tf.stack([v for v in x]))
+                .window(size=FLAGS.past, shift=1, stride=1, drop_remainder=True)
+                .flat_map(lambda x: x.batch(FLAGS.past, drop_remainder=True))
+        )
 
-def train_model(model, hparams, num_epochs, callbacks):
+        # Zip timeseries features with labels
+        result = tf.data.Dataset.zip((timeseries, label))
+        return result
 
-    raw_data = read_dataset(TFRECORD_DIR)
+    # Interleave training examples from each TFRecord file
+    tfrecord = tfrecord_raw.interleave(
+            lambda x: read_func(x),
+            #cycle_length=1,
+            #block_length=1,
+    )
+    return tfrecord
 
-    if MODE == 'regression':
-        processed_data = raw_data.map(preprocess_regress)
-        ds = processed_data.map(fold_data_regress)
+def preprocess():
+    """
+    Read input TFRecords and return a (train, validate) Dataset tuple
+    Handles all repeat/shuffle/batching according to CLI flags. Resultant
+    datasets will produce (features, label) tensors.
+    """
+
+    # Detect CSV vs TFRecord
+    if 'csv' in FLAGS.glob.lower():
+        ds = read_csv()
     else:
-        processed_data = raw_data.map(preprocess)
-        ds = processed_data.map(fold_data)
+        ds = read_basic()
 
-    train = ds.skip(VALIDATION_SIZE).repeat()
-    #print_records(train)
-    validate = ds.take(VALIDATION_SIZE).repeat()
+    for x in ds.take(1):
+        print(x)
 
-    validate_batch = VALIDATION_SIZE // hparams[HP_BATCH_SIZE]
+    # Train / test split
+    if FLAGS.validation_size > 0 and not FLAGS.speedrun:
+        train = ds.skip(FLAGS.validation_size)
+        validate = ds.take(FLAGS.validation_size)
+    else:
+        train = ds.skip(hparams[HP_BATCH_SIZE])
+        validate = ds.take(hparams[HP_BATCH_SIZE])
+
+    # Shuffle if reqested
+    if FLAGS.shuffle_size > 0:
+        train = train.shuffle(FLAGS.shuffle_size)
+
+    # Repeat if requested
+    if FLAGS.repeat:
+        train = train.repeat()
+        validate = validate.repeat()
+
+    # Batch
     validate = validate.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
+    train = train.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
 
-    train = (train.shuffle(4096)
-                .batch(hparams[HP_BATCH_SIZE])
-                .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-                )
+    if FLAGS.prefetch:
+        train = train.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+        validate = validate.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
-    validate = validate.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+    return train, validate
 
-    validation_steps = VALIDATION_SIZE // hparams[HP_BATCH_SIZE]
-    STEPS_PER_EPOCH = TOTAL_STEPS / hparams[HP_BATCH_SIZE]
+
+
+def construct_model():
+
+    # Model
+    if FLAGS.mode == 'regression':
+        head = RegressionHead()
+        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True)
+    else:
+        head = Head(classes=FLAGS.classes)
+        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True)
+
+    return model
+
+def train_model(model, train, validate):
+
 
     # Metrics / loss / optimizer
-    if MODE == 'regression':
-        metrics = ['mean_absolute_error', 'mean_squared_error' ]
+    if FLAGS.mode == 'regression':
+        metrics = ['mean_absolute_error', 'mean_squared_error']
         loss = 'mean_squared_error'
     else:
         metrics = [
@@ -168,99 +228,104 @@ def train_model(model, hparams, num_epochs, callbacks):
     optimizer = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LR])
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
 
-    callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
+    model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
 
     history = model.fit(
-            train,
-            epochs=num_epochs,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            validation_data=validate,
-            validation_steps=validation_steps,
-            callbacks=callbacks
+        train,
+        epochs=FLAGS.epochs,
+        steps_per_epoch=FLAGS.steps_per_epoch,
+        validation_data=validate,
+        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE],
+        callbacks=model_callbacks
     )
 
 
-def tune_hparams(model, callbacks):
-    session_num = 0
-    for bs in HP_BATCH_SIZE.domain.values:
-        for lr in (HP_LR.domain.min_value, HP_LR.domain.max_value):
-            hparams = {
-                HP_BATCH_SIZE: bs,
-                HP_LR: lr,
-            }
-            run_name = "run-%d" % session_num
-            print('--- Starting trial: %s' % run_name)
-            print({h.name: hparams[h] for h in hparams})
-            train_model(model, hparams, 1, callbacks)
-            session_num += 1
+# def tune_hparams(model, callbacks):
+#     session_num = 0
+#     for bs in HP_BATCH_SIZE.domain.values:
+#         for lr in (HP_LR.domain.min_value, HP_LR.domain.max_value):
+#             hparams = {
+#                 HP_BATCH_SIZE: bs,
+#                 HP_LR: lr,
+#             }
+#             run_name = "run-%d" % session_num
+#             print('--- Starting trial: %s' % run_name)
+#             print({h.name: hparams[h] for h in hparams})
+#             train_model(model, hparams, 1, callbacks)
+#             session_num += 1
 
+
+def main(argv):
+
+    callbacks = get_callbacks(FLAGS)
+
+    global hparams
+    hparams = {
+            HP_LR: FLAGS.lr,
+            HP_BATCH_SIZE: FLAGS.batch_size
+    }
+    hparam_dir = init_hparams(hparams.keys(), FLAGS)
+
+    train, validate = preprocess()
+
+    for x in train.take(1):
+        f, l = x
+        print("Dataset feature tensor shape: %s" % f.shape)
+        print("Dataset label tensor shape: %s" % l.shape)
+        print("First batch labels: %s" % l.numpy())
+
+    inputs = layers.Input(shape=[128, len(FLAGS.features)], dtype=tf.float32)
+    model = construct_model()
+    outputs = model(inputs)
+
+    if FLAGS.resume:
+        print("Loading weights from %s" % FLAGS.resume)
+        model.load_weights(FLAGS.resume)
+
+    if FLAGS.summary:
+        out_path = os.path.join(FLAGS.artifacts_dir, 'summary.txt')
+        model.summary()
+        save_summary(model, out_path)
+        return
+
+    if FLAGS.speedrun:
+        speedrun(model, train, validate)
+        return
+
+    train_model(model, train, validate)
+
+
+def speedrun(model, train, test):
+    """
+    Speedrun through small epochs, printing model prediction results
+    after each epoch. Use this to get a rough idea of model behavior
+    """
+
+    # Metrics / loss / optimizer
+    if FLAGS.mode == 'regression':
+        metrics = ['mean_absolute_error', 'mean_squared_error']
+        loss = 'mean_squared_error'
+    else:
+        metrics = [
+            tf.keras.metrics.SparseCategoricalAccuracy(),
+        ]
+        loss = tf.keras.losses.SparseCategoricalCrossentropy()
+
+    optimizer = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LR])
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    callback = tf.keras.callbacks.LambdaCallback(
+            on_epoch_end=lambda x, y: quick_eval(model, test, FLAGS.mode)
+    )
+
+    model.fit(
+        train,
+        epochs=FLAGS.epochs,
+        steps_per_epoch=100,
+        validation_data=test,
+        validation_steps=1,
+        callbacks=[callback]
+    )
 
 if __name__ == '__main__':
-
-
-    chkpt_fmt=os.path.join(checkpoint_dir, 'trader_{epoch:02d}.hdf5')
-    chkpt_cb = ModelCheckpoint(
-            filepath=chkpt_fmt,
-            save_freq='epoch',
-            save_weights_only=True
-    )
-
-    tensorboard_cb = tf.keras.callbacks.TensorBoard(
-        log_dir=os.path.join(tb_dir, date_prefix),
-        write_graph=True,
-        histogram_freq=1,
-        embeddings_freq=1,
-        update_freq='batch'
-    )
-    file_writer = tf.summary.create_file_writer(tb_dir + "/metrics")
-    file_writer.set_as_default()
-
-
-    with tf.summary.create_file_writer(hparam_dir).as_default():
-        hp.hparams_config(
-            hparams=hparam_objs,
-            metrics=[hp.Metric('sparse_categorical_accuracy', display_name='acc')],
-        )
-
-    learnrate_cb = tf.keras.callbacks.ReduceLROnPlateau(
-                monitor='loss',
-                factor=0.5,
-                patience=5,
-                min_lr=0.001
-    )
-
-    stopping_cb = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3)
-
-    callbacks = [
-            chkpt_cb,
-            tensorboard_cb,
-            learnrate_cb,
-            stopping_cb
-    ]
-
-    inputs = tf.keras.layers.Input(
-        shape=[180, len(feature_keys)],
-        name='input',
-        dtype=tf.float32
-    )
-
-    # Model
-    if MODE == 'regression':
-        head = RegressionHead()
-        model = TraderNet(levels=levels, use_head=head, use_tail=True)
-    else:
-        head = Head(classes=3)
-        model = TraderNet(levels=levels, use_head=head, use_tail=True)
-
-    outputs = model(inputs)
-    model.summary()
-
-    #tune_hparams(model, callbacks)
-
-
-
-    hparams = {
-        HP_BATCH_SIZE: 64,
-        HP_LR: 0.001,
-    }
-    train_model(model, hparams, EPOCHS, callbacks)
+  app.run(main)
