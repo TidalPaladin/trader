@@ -28,7 +28,6 @@ object Trader {
   val spark = SparkSession
     .builder
     .appName("trader")
-    //.config("spark.jars", "/to/spark-tensorflow-connector_2.11-1.12.0.jar")
     .getOrCreate()
 
   val sc = spark.sparkContext
@@ -48,6 +47,7 @@ object Trader {
       StructField("low", FloatType) ::
       StructField("adjclose", FloatType) :: Nil)
 
+    /* Read raw CSV, zip with hash value indicating file source */
     val raw_df = spark
       .read
       .option("header", "true")
@@ -55,12 +55,19 @@ object Trader {
       .csv(config.in)
       .withColumn("symbol", hash(input_file_name()))
 
+    /* Column to encode day of year with a sin function */
+    val positional_encoding = sin(lit(3.14) * dayofyear($"date") / lit(365))
+
+    /* Use ratio of adjclose / close to rescale other price metrics */
+    val rescale_ratio = $"adjclose" / $"close"
+
+    /* Filter by date cutoff, rescale prices, create positional encoding column */
     val df = raw_df
       .filter(year($"date") > config.date)
-      .withColumn("position", sin(lit(3.14) * dayofyear($"date") / lit(365)))
-      .withColumn("adjhigh", $"adjclose" / $"close" * $"high")
-      .withColumn("adjlow", $"adjclose" / $"close" * $"low")
-      .withColumn("adjopen", $"adjclose" / $"close" * $"open")
+      .withColumn("position", positional_encoding)
+      .withColumn("adjhigh", rescale_ratio * $"high")
+      .withColumn("adjlow", rescale_ratio * $"low")
+      .withColumn("adjopen",rescale_ratio * $"open")
       .drop("high", "low", "open", "close")
       .withColumnRenamed("adjclose", "close")
       .withColumnRenamed("adjopen", "open")
@@ -68,12 +75,14 @@ object Trader {
       .withColumnRenamed("adjlow", "low")
 
 
+    /* Select future columns */
     val future_df = df.select(
       $"symbol".as("f_symbol"),
       $"date".as("f_date"),
       $"close".as("f_close")
     )
 
+    /* Calculate percent change from present to future */
     val change_df = df
       .join(future_df, $"symbol" === $"f_symbol")
       .filter(date_add($"date", 1) === $"f_date")
@@ -82,14 +91,17 @@ object Trader {
 
     val feature_cols = Array("high", "low", "open", "close", "volume", "position")
 
+    /* Vectorizer collects features into a vector */
     val vectorizer = new VectorAssembler()
       .setInputCols(feature_cols)
       .setOutputCol("raw_features")
 
+    /* Per-feature standardization / scale */
     val standardizer = new MaxAbsScaler()
       .setInputCol("raw_features")
       .setOutputCol("features")
 
+    /* Generate labels based on percent change quantile */
     val labeler = new QuantileDiscretizer()
       .setInputCol("change")
       .setOutputCol("label")
@@ -98,6 +110,7 @@ object Trader {
     val stages = Array(vectorizer, standardizer, labeler)
     val pipeline = new Pipeline().setStages(stages)
 
+    /* Run pipeline and clean up output types */
     val raw_result = pipeline
       .fit(change_df)
       .transform(change_df)
@@ -109,29 +122,26 @@ object Trader {
       .withColumnRenamed("cast", "label")
       .cache()
 
-    val result_df = raw_result
-      .repartition($"symbol")
-      .sortWithinPartitions(desc("date"))
-      .cache()
-
-    val display_df = result_df.select("symbol", "date", "features", "label", "change")
-
+    /* Generate an output DataFrame and show results */
+    val display_df = raw_result.select("symbol", "date", "features", "label", "change")
     display_df.show()
     display_df.printSchema
-
     display_df.drop($"features").describe().show()
     display_df.groupBy("label").count().show()
 
 
+    /* If requested, write TFRecords */
     if(config.tfrecord) {
       log.info("Writing TFRecords")
 
+      /* Window function to collect historical prices */
       val past_window = Window
         .partitionBy("symbol")
         .orderBy(desc("date"))
         .rowsBetween(Window.currentRow - config.past + 1, Window.currentRow)
 
-      val dense_df = result_df
+      /* Collect features over historical window to a matrix */
+      val dense_df = raw_df
         .select($"symbol", $"date", $"features", $"label", $"change")
         .withColumn("dense_features", collect_list(vec_to_array($"features")).over(past_window))
         .drop("features", "date", "symbol")
@@ -148,7 +158,6 @@ object Trader {
         .mode("overwrite")
         .option("recordType", "SequenceExample")
         .save(config.out + "/tfrecords")
-
     }
   }
 
