@@ -122,7 +122,7 @@ def train_model(model, train, validate):
     if FLAGS.speedrun:
         steps_per_epoch = 100
         validation_steps = 1
-        modle_callbacks = [ tf.keras.callbacks.LambdaCallback(
+        model_callbacks = [ tf.keras.callbacks.LambdaCallback(
                 on_epoch_end=lambda x, y: quick_eval(model, validate, FLAGS.mode)
         )]
 
@@ -190,44 +190,7 @@ def main(argv):
         save_summary(model, out_path)
         return
 
-    if FLAGS.speedrun:
-        speedrun(model, train, validate)
-        return
-
     train_model(model, train, validate)
-
-
-def speedrun(model, train, test):
-    """
-    Speedrun through small epochs, printing model prediction results
-    after each epoch. Use this to get a rough idea of model behavior
-    """
-
-    # Metrics / loss / optimizer
-    if FLAGS.mode == 'regression':
-        metrics = ['mean_absolute_error', 'mean_squared_error']
-        loss = 'mean_squared_error'
-    else:
-        metrics = [
-            tf.keras.metrics.SparseCategoricalAccuracy(),
-        ]
-        loss = tf.keras.losses.SparseCategoricalCrossentropy()
-
-    optimizer = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LR])
-    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
-
-    callback = tf.keras.callbacks.LambdaCallback(
-            on_epoch_end=lambda x, y: quick_eval(model, test, FLAGS.mode)
-    )
-
-    model.fit(
-        train,
-        epochs=FLAGS.epochs,
-        steps_per_epoch=100,
-        validation_data=test,
-        validation_steps=1,
-        callbacks=[callback]
-    )
 
 if __name__ == '__main__':
   app.run(main)
