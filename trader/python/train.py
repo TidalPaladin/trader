@@ -106,7 +106,6 @@ def construct_model():
 
 def train_model(model, train, validate):
 
-
     # Metrics / loss / optimizer
     if FLAGS.mode == 'regression':
         metrics = ['mean_absolute_error', 'mean_squared_error']
@@ -120,14 +119,25 @@ def train_model(model, train, validate):
     optimizer = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LR])
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
 
-    model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
+    if FLAGS.speedrun:
+        steps_per_epoch = 100
+        validation_steps = 1
+        modle_callbacks = [ tf.keras.callbacks.LambdaCallback(
+                on_epoch_end=lambda x, y: quick_eval(model, validate, FLAGS.mode)
+        )]
+
+    else:
+        model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
+        steps_per_epoch=steps_per_epoch
+        validation_data=validate,
+        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE],
 
     history = model.fit(
         train,
         epochs=FLAGS.epochs,
-        steps_per_epoch=FLAGS.steps_per_epoch,
+        steps_per_epoch=steps_per_epoch,
         validation_data=validate,
-        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE],
+        validation_steps=validation_steps,
         callbacks=model_callbacks
     )
 
