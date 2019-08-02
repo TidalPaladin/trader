@@ -22,6 +22,9 @@ object Trader {
   val toArr: Any => Array[Double] = _.asInstanceOf[DenseVector].toArray
   val vec_to_array = udf(toArr)
 
+  val feature_cols = Array("high", "low", "open", "close", "volume", "position")
+
+  /* Schema of source dataset */
   val schema = StructType(
     StructField("date", DateType) ::
     StructField("volume", IntegerType) ::
@@ -46,6 +49,7 @@ object Trader {
     _.select($"*" +: targets.map(c => (col(c) * ratio).alias(s"adj$c")): _*)
      .drop("close" +: targets: _*)
      .select($"*"+: $"adjclose".alias("close") +: targets.map(c => col(s"adj$c").alias(c)): _*)
+     .drop("adjclose" +: targets.map(c => s"adj$c"): _*)
   }
 
   /* Calculate percent change in future close price by user supplied window */
@@ -60,6 +64,59 @@ object Trader {
     _.withColumn("change", change_col)
   }
 
+  /* Discard dates older than a threshold year */
+  val filterByDate = (thresh: Int, df: DataFrame) => {
+    df.filter(year($"date") > thresh)
+  }
+
+  /* Filter where abs(percent change) > thresh */
+  val filterByChange = (thresh: Double, df: DataFrame) => {
+    df.filter(abs($"change") <= thresh)
+  }
+
+  /**
+   Filter where groupBy(symbol).avg(close) < some cutoff.
+   Here use a value slightly higher than 1.0 for penny stocks
+  */
+ val filterPennyStocks = (df: DataFrame) => {
+    df.groupBy('symbol)
+      .agg(avg('close).as("avg_close"))
+      .filter('avg_close > 0.8)
+      .withColumnRenamed("symbol", "symbol2")
+      .join(df, $"symbol" === $"symbol2")
+      .drop("symbol2", "avg_close")
+  }
+
+  /* Performs rollup of features over a historical window to a nested array */
+ val getFeatureMatrix = (past: Int, stride: Int, df: DataFrame) => {
+
+    /* Window function to collect historical prices */
+    val past_window = Window
+      .partitionBy("symbol")
+      .orderBy(desc("date"))
+      .rowsBetween(Window.currentRow - past + 1, Window.currentRow)
+
+    val collected_col = collect_list(vec_to_array($"features")).over(past_window)
+
+    df.withColumn("dense_features", collected_col)
+      .drop("features")
+      .withColumnRenamed("dense_features", "features")
+      .filter(size($"features") === past)
+      .filter((dayofyear('date) % stride) === 0)
+  }
+
+
+  /* Recast multiple DataFrame columns given a map of column names to types*/
+   val recastColumns = (m: Map[String, DataType], df: DataFrame) => {
+     val oldKeys = m.keySet.toSeq
+     val tempKeys = oldKeys.map(c => col(c).cast(m(c)).alias(s"cast$c"))
+     val newKeys = oldKeys.map(c => col(s"cast$c").alias(c))
+
+      df.select($"*" +: tempKeys : _*)
+        .drop(oldKeys: _*)
+        .select($"*" +: newKeys: _*)
+        .drop(oldKeys.map(c => s"cast$c"): _*)
+    }
 
   def main(args: Array[String]) {
     Logger.getRootLogger.setLevel(Level.WARN)
@@ -72,17 +129,6 @@ object Trader {
   }
 
   def run(config: Config) {
-
-    val filterDates: DataFrame => DataFrame = _.filter(year($"date") > config.date)
-
-		/* Filter by absolute value of percent change if set in CLI flag */
-    val filterByChange: DataFrame => DataFrame = config.max_change match {
-      case Some(x) => {(df) => df.filter(abs($"change") <= x)}
-      case _ => {(df) => df}
-    }
-
-
-    val feature_cols = Array("high", "low", "open", "close", "volume", "position")
 
     /* Vectorizer collects features into a vector */
     val vectorizer = new VectorAssembler()
@@ -102,13 +148,14 @@ object Trader {
 				case _ => config.bucketize match {
 					case Some(x) => new Bucketizer().setSplits(x).setInputCol("change").setOutputCol("label")
 					case _ => None
-			}
+        }
 		}
 
     val stages = Array(vectorizer, norm, labeler).map{
-			case Some(x: PipelineStage) => x
-			case x: PipelineStage => x
-		}
+			case Some(x: PipelineStage) => Some(x)
+			case x: PipelineStage => Some(x)
+      case None => None
+		}.flatten
     val pipeline = new Pipeline().setStages(stages)
 
     /* Read raw CSV, zip with hash value indicating file source */
@@ -121,9 +168,16 @@ object Trader {
 
 
     /* Define a preprocessing pipeline and apply to raw df */
-		val results_df = filterDates
+
+
+
+   val results_df = ((df: DataFrame) => filterByDate(config.date, df))
+      .andThen(filterPennyStocks)
       .andThen(getPercentChange)
-      .andThen(filterByChange)
+      .andThen(config.max_change match {
+        case Some(x) => (df: DataFrame) => filterByChange(x, df)
+        case _ => (df: DataFrame) => df
+      })
       .andThen(positionalEncoding)
 			.apply(raw_df)
 			.cache()
@@ -140,59 +194,51 @@ object Trader {
     /* Generate an output DataFrame and show results */
     val display_df = df.select("symbol", "date", "features", "label", "change")
 
+    println("Processed DataFrame before feature matrix rollup:")
     display_df.show()
     display_df.printSchema
 
+    println("Processed DataFrame label stats")
     df.select("label", "change" +: feature_cols: _*).describe().show()
 
+    println("Average percent change within a label:")
     display_df
       .groupBy('label)
       .agg(count("label").as("count"), avg("change").as("avg_change"))
       .orderBy(desc("label"))
       .show()
 
+   /* Collect features over historical window to a matrix */
+   val recast = Map("change" -> FloatType, "label" -> IntegerType)
 
-		/* Performs rollup of features over a historical window to a nested array */
-		val getFeatureMatrix: DataFrame => DataFrame = {
+   val dense_df = ((df: DataFrame) => getFeatureMatrix(config.past, config.stride, df))
+      .andThen((df: DataFrame) => recastColumns(recast, df))
+      .apply(df.select($"symbol", $"date", $"features", $"label", $"change"))
+      .cache()
 
-			/* Window function to collect historical prices */
-			val past_window = Window
-				.partitionBy("symbol")
-				.orderBy(desc("date"))
-				.rowsBetween(Window.currentRow - config.past + 1, Window.currentRow)
-
-			val collected_col = collect_list(vec_to_array($"features")).over(past_window)
-
-			_.withColumn("dense_features", collected_col)
-			.drop("features")
-			.withColumnRenamed("dense_features", "features")
-			.filter(size($"features") === config.past)
-		}
-
+    println("Dense DataFrame: Dates should be strided here")
+    dense_df.show()
 
     /* If requested, write TFRecords */
     config.out match {
       case Some(path) => {
         log.info("Writing TFRecords")
 
-
-        /* Collect features over historical window to a matrix */
-        val dense_df = getFeatureMatrix
-					.apply(df.select($"symbol", $"date", $"features", $"label", $"change"))
-          .drop( "date", "symbol")
-					.withColumn("cast", $"change".cast(FloatType))
-					.drop($"change")
-					.withColumnRenamed("cast", "change")
-					.withColumn("cast", $"label".cast(IntegerType))
-					.drop($"label")
-					.withColumnRenamed("cast", "label")
-          .cache()
-
-        dense_df.printSchema
-
-        dense_df
+        val write_df = dense_df
+          .drop("date", "symbol")
           .repartition(config.shards)
-          .write
+
+        println("Write DataFrame schema:")
+        write_df.printSchema
+
+        println("Write DataFrame metrics:")
+        write_df
+          .groupBy('label)
+          .agg(count("label"), avg("change"), max("change"), min("change"))
+          .orderBy(desc("label"))
+          .show()
+
+        write_df.write
           .format("tfrecords")
           .mode("overwrite")
           .option("recordType", "SequenceExample")
@@ -201,5 +247,4 @@ object Trader {
       case _ => Unit
     }
   }
-
 }

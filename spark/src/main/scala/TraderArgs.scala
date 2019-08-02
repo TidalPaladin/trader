@@ -18,9 +18,8 @@ case class Config(
     shards: Int = 100,
     max_change: Option[Double] = None,
     norm: Option[PipelineStage] = None,
-    ema: Option[Int] = None,
-    rsi: Option[Int] = None,
-    penny: Boolean = False
+    penny: Boolean = false,
+    stride: Int = 5
 )
 
 object TraderArgs {
@@ -73,6 +72,15 @@ object TraderArgs {
         .action((x, c) => c.copy(past = x))
         .text("aggregate past <int> records into an example"),
 
+      opt[Int]("stride")
+        .valueName("<int>")
+        .validate(x =>
+            if(x > 0) success
+            else failure("Value <int> must be >0")
+        )
+        .action((x, c) => c.copy(stride = x))
+        .text("stride training example window by <int> days"),
+
       opt[Int]('f', "future")
         .valueName("<int>")
         .validate(x =>
@@ -116,26 +124,7 @@ object TraderArgs {
 				)))
         .text("run Bucketizer with the given buckets"),
 
-      opt[Int]("rsi")
-        .valueName("<int>")
-        .validate(x =>
-            if(x > 1) success
-            else failure("Value <int> must be >1")
-        )
-        .action((x, c) => c.copy(rsi = Some(x)))
-        .text("add <int> day RSI metric as a feature"),
-
-      opt[Int]("ema")
-        .valueName("<int>")
-        .validate(x =>
-            if(x > 1) success
-            else failure("Value <int> must be >1")
-        )
-        .action((x, c) => c.copy(ema = Some(x)))
-        .text("add <int> day exponential moving average metric as a feature"),
-
       opt[Unit]("penny-stocks")
-        .action((x, c) => c.copy(penny = x))
         .text("if set, allow penny stocks. default false"),
 
       help("help").text("prints this usage text"),
