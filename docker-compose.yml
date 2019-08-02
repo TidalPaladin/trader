@@ -43,6 +43,8 @@ services:
     build: ./trader
     container_name: trader
     networks: [sparknet]
+    ports:
+      - 6006:6006
     runtime: nvidia
     volumes:
       - ${DEST_DIR}:/data
