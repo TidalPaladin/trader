@@ -109,7 +109,7 @@ flags.DEFINE_integer(
 
 flags.DEFINE_integer(
     'validation_size',
-    4000,
+    10000,
     'Number of examples to include in the validation set'
 )
 

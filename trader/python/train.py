@@ -127,8 +127,12 @@ def train_model(model, train, validate):
     else:
         model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
         steps_per_epoch=FLAGS.steps_per_epoch
-        validation_data=validate,
-        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE],
+        validation_data=validate
+        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE]
+
+    assert(FLAGS.validation_size >= 0)
+    assert(steps_per_epoch > 0)
+    assert(validation_steps >= 0)
 
     history = model.fit(
         train,

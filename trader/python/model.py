@@ -287,7 +287,7 @@ class AttentionHead(layers.Layer):
         2. Fully connected layer + BN + ReLU
     """
 
-    def __init__(self, classes=100):
+    def __init__(self, classes=100, dropout=None):
         """
         Arguments:
             classes:    Positive integer, number of classes in the output of the
@@ -305,25 +305,25 @@ class AttentionHead(layers.Layer):
                 use_bias=True,
                 activation='relu',
                 name='Head_dense',
-                kernel_regularizer=tf.keras.regularizers.l2(0.01),
-                bias_regularizer=tf.keras.regularizers.l2(0.01)
+                #kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                #bias_regularizer=tf.keras.regularizers.l2(0.01)
         )
 
-        self.dropout = layers.Dropout(0.1)
+        self.dropout = layers.Dropout(dropout) if dropout else None
 
         self.dense2 = layers.Dense(
                 units=classes,
                 use_bias=True,
                 activation='softmax',
                 name='Head_dense',
-                kernel_regularizer=tf.keras.regularizers.l2(0.01),
-                bias_regularizer=tf.keras.regularizers.l2(0.01)
+                #kernel_regularizer=tf.keras.regularizers.l2(0.01),
+                #bias_regularizer=tf.keras.regularizers.l2(0.01)
         )
 
     def call(self, inputs, training=False, **kwargs):
         _ = self.pooling(inputs)
         _ = self.dense(_)
-        _ = self.dropout(_, training=training)
+        _ = self.dropout(_, training=training) if self.dropout else _
         _ = self.dense2(_)
         return _
 

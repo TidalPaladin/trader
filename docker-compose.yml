@@ -45,7 +45,7 @@ services:
     networks: [sparknet]
     runtime: nvidia
     volumes:
-      - ${DEST_DIR}:/data/
+      - ${DEST_DIR}:/data
       - ${ARTIFACT_DIR}:/artifacts
       - /home/tidal/Documents/trader/trader/python:/app
     environment:
