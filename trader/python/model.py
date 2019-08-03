@@ -290,27 +290,18 @@ class RegressionHead(layers.Layer):
         self.pooling = layers.GlobalAveragePooling1D()
 
         self.dense = layers.Dense(
-                units=128,
-                use_bias=True,
-                activation='relu',
-                name='Head_dense',
-        )
-        self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.flatten = layers.Flatten()
-
-        self.dense2 = layers.Dense(
                 units=1,
                 use_bias=True,
                 activation=None,
                 name='Head_dense',
         )
+        self.flatten = layers.Flatten()
+
 
     def call(self, inputs, training=False, **kwargs):
         _ = self.pooling(inputs)
         _ = self.dense(_)
-        _ = self.norm(_)
-        _ = self.flatten(_)
-        _ = self.dense2(_)
+        #_ = self.flatten(_)
         return _
 
 class TraderNet(tf.keras.Model):
