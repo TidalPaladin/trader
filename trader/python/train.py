@@ -173,7 +173,36 @@ def train_model(model, train, validate):
 
 def main(argv):
 
-    callbacks = get_callbacks(FLAGS)
+    FLAGS.levels = [int(x) for x in FLAGS.levels]
+
+    inputs = layers.Input(shape=[128, len(FLAGS.features)], dtype=tf.float32)
+    model = construct_model()
+    outputs = model(inputs)
+
+    checkpoint_dir = os.path.join(FLAGS.artifacts_dir, 'checkpoint')
+    clean_empty_dirs(checkpoint_dir)
+
+    initial_epoch = 0
+    resume_file = FLAGS.resume if FLAGS.resume else None
+
+    if FLAGS.resume_last:
+        # Find directory of latest run
+        chkpt_path = Path(FLAGS.artifacts_dir, 'checkpoint')
+        latest_path = sorted(list(chkpt_path.glob('20*')))[-1]
+        logging.info("Using latest run - %s", latest_path)
+
+        # Find latest checkpoint file
+        latest_checkpoint = sorted(list(latest_path.glob('*.hdf5')))[-1]
+        FLAGS.resume = str(latest_checkpoint.resolve())
+
+    if FLAGS.resume:
+        logging.info("Loading weights from file %s", FLAGS.resume)
+        model.load_weights(FLAGS.resume)
+        initial_epoch = int(re.search('([0-9]*)\.hdf5', FLAGS.resume).group(1))
+        logging.info("Starting from epoch %i", initial_epoch+1)
+
+    global callbacks
+    callbacks = get_callbacks(FLAGS) if not FLAGS.speedrun else []
 
     global hparams
     hparams = {
