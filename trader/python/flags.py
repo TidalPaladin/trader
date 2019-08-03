@@ -31,7 +31,7 @@ flags.DEFINE_bool(
 
 flags.DEFINE_integer(
     'batch_size',
-    128,
+    256,
     'Batch size for training'
 )
 
@@ -61,7 +61,7 @@ flags.DEFINE_bool(
 
 flags.DEFINE_integer(
     'shuffle_size',
-    4096,
+    1024,
     'Size of the shuffle buffer. If 0, do not shuffle input data.'
 )
 
