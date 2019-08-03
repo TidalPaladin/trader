@@ -31,6 +31,7 @@ HP_LR = hp.HParam('learning_rate', hp.RealInterval(0.001, 0.1))
 
 # Number of features in written TFRecord files
 TFREC_FEATURES = 6
+FEATURE_LEN = 128
 
 TFREC_SPEC = {
     'features': tf.io.FixedLenSequenceFeature([TFREC_FEATURES], tf.float32),
