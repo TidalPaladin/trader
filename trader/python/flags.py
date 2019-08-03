@@ -161,6 +161,12 @@ flags.DEFINE_string(
     'Resume from the specified model checkpoint filepath'
 )
 
+flags.DEFINE_bool(
+    'resume_last',
+    None,
+    'Attempt to resume from the most recent checkpoint'
+)
+
 flags.register_validator(
     'src',
     lambda v: os.path.isdir(v) and os.access(v, os.R_OK),
