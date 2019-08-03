@@ -78,7 +78,7 @@ object Trader {
    Filter where groupBy(symbol).avg(close) < some cutoff.
    Here use a value slightly higher than 1.0 for penny stocks
   */
- val filterPennyStocks = (df: DataFrame) => {
+  val filterPennyStocks = (df: DataFrame) => {
     df.groupBy('symbol)
       .agg(avg('close).as("avg_close"))
       .filter('avg_close > 0.8)
@@ -88,7 +88,7 @@ object Trader {
   }
 
   /* Performs rollup of features over a historical window to a nested array */
- val getFeatureMatrix = (past: Int, stride: Int, df: DataFrame) => {
+  val getFeatureMatrix = (past: Int, stride: Int, df: DataFrame) => {
 
     /* Window function to collect historical prices */
     val past_window = Window
@@ -107,7 +107,7 @@ object Trader {
 
 
   /* Recast multiple DataFrame columns given a map of column names to types*/
-   val recastColumns = (m: Map[String, DataType], df: DataFrame) => {
+  val recastColumns = (m: Map[String, DataType], df: DataFrame) => {
      val oldKeys = m.keySet.toSeq
      val tempKeys = oldKeys.map(c => col(c).cast(m(c)).alias(s"cast$c"))
      val newKeys = oldKeys.map(c => col(s"cast$c").alias(c))
@@ -116,7 +116,8 @@ object Trader {
         .drop(oldKeys: _*)
         .select($"*" +: newKeys: _*)
         .drop(oldKeys.map(c => s"cast$c"): _*)
-    }
+  }
+
 
   def main(args: Array[String]) {
     Logger.getRootLogger.setLevel(Level.WARN)
@@ -130,16 +131,24 @@ object Trader {
 
   def run(config: Config) {
 
+    /* Writes to CSV given subdir and DataFrame based on config.out path */
+    def writeCsv: (String, DataFrame) => Unit = config.out match {
+      case Some(x) => (subdir, df) => {
+        df.repartition(1)
+          .write.mode("overwrite").option("header", "true")
+          .csv(x + "/" + subdir)
+      }
+      case _ => (subdir, df) => Unit
+    }
+
     /* Vectorizer collects features into a vector */
-    val vectorizer = new VectorAssembler()
-      .setInputCols(feature_cols)
-      .setOutputCol("raw_features")
+    val vectorizer = new VectorAssembler().setInputCols(feature_cols).setOutputCol("raw_features")
 
     /* Per-feature standardization / scale */
     val norm = config.norm match {
       case Some(x: MaxAbsScaler) => x.setInputCol("raw_features").setOutputCol("features")
       case Some(x: StandardScaler) => x.setInputCol("raw_features").setOutputCol("features").setWithMean(true).setWithStd(true)
-			case _ => None
+      case _ => None
     }
 
     /* Choose a label pipeline stage based on CLI flags */
@@ -166,12 +175,7 @@ object Trader {
       .csv(config.in)
       .withColumn("symbol", hash(input_file_name()))
 
-
-    /* Define a preprocessing pipeline and apply to raw df */
-
-
-
-   val results_df = ((df: DataFrame) => filterByDate(config.date, df))
+    val results_df = ((df: DataFrame) => filterByDate(config.date, df))
       .andThen(filterPennyStocks)
       .andThen(getPercentChange)
       .andThen(config.max_change match {
@@ -179,17 +183,15 @@ object Trader {
         case _ => (df: DataFrame) => df
       })
       .andThen(positionalEncoding)
-			.apply(raw_df)
-			.cache()
+      .apply(raw_df)
+      .cache()
 
     /* Run Spark pipeline for feature extraction */
 		val df = pipeline
 			.fit(results_df)
       .transform(results_df)
       .cache()
-
 		results_df.unpersist()
-
 
     /* Generate an output DataFrame and show results */
     val display_df = df.select("symbol", "date", "features", "label", "change")
@@ -199,7 +201,9 @@ object Trader {
     display_df.printSchema
 
     println("Processed DataFrame label stats")
-    df.select("label", "change" +: feature_cols: _*).describe().show()
+    val raw_stats_df = df.select("label", "change" +: feature_cols: _*).describe()
+    raw_stats_df.show()
+    writeCsv("stats", raw_stats_df)
 
     println("Average percent change within a label:")
     display_df
@@ -211,6 +215,7 @@ object Trader {
    /* Collect features over historical window to a matrix */
    val recast = Map("change" -> FloatType, "label" -> IntegerType)
 
+   /* Perform feature matrix rollup */
    val dense_df = ((df: DataFrame) => getFeatureMatrix(config.past, config.stride, df))
       .andThen((df: DataFrame) => recastColumns(recast, df))
       .apply(df.select($"symbol", $"date", $"features", $"label", $"change"))
@@ -224,19 +229,18 @@ object Trader {
       case Some(path) => {
         log.info("Writing TFRecords")
 
-        val write_df = dense_df
-          .drop("date", "symbol")
-          .repartition(config.shards)
-
+        val write_df = dense_df.drop("date", "symbol").repartition(config.shards)
         println("Write DataFrame schema:")
         write_df.printSchema
 
         println("Write DataFrame metrics:")
-        write_df
+        val metric_df = write_df
           .groupBy('label)
           .agg(count("label"), avg("change"), max("change"), min("change"))
           .orderBy(desc("label"))
-          .show()
+        metric_df.show()
+
+        writeCsv("metrics", metric_df)
 
         write_df.write
           .format("tfrecords")
