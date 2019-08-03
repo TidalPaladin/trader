@@ -1,0 +1,1495 @@
+#!python3
+import os
+import re
+import tensorflow as tf
+import numpy as np
+from datetime import datetime
+from pathlib import Path
+import json
+
+from tensorflow.keras.callbacks import ModelCheckpoint, ProgbarLogger
+from tensorflow.data.experimental import AUTOTUNE
+
+from pathlib import Path
+from glob import glob as glob_func
+from util import *
+from model import *
+
+from tensorboard.plugins.hparams import api as hp
+import tensorflow.feature_column as fc
+from tensorflow.keras.layers import *
+
+from absl import app, logging
+from flags import FLAGS
+
+hparams = dict()
+callbacks = list()
+hparam_dir = ''
+
+HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([64, 256, 512]))
+HP_LR = hp.HParam('learning_rate', hp.RealInterval(0.001, 0.1))
+
+# Number of features in written TFRecord files
+TFREC_FEATURES = 6
+FEATURE_LEN = 128
+
+TFREC_SPEC = {
+    'features': tf.io.FixedLenSequenceFeature([TFREC_FEATURES], tf.float32),
+    'change': tf.io.FixedLenFeature([], tf.float32),
+    'label': tf.io.FixedLenFeature([], tf.int64),
+}
+
+def preprocess():
+
+    logging.info("Reading TFRecords from: %s/%s", FLAGS.src, FLAGS.glob)
+
+    def _parse_tfrec(example_proto):
+        # Sequence features (feature matrix)
+        seq_f = {'features': TFREC_SPEC['features']}
+
+        # Context features (FixedLenFeature scalars)
+        context_f = {x: TFREC_SPEC[x] for x in ['change', 'label']}
+
+        # Read example proto into dicts
+        con, seq, dense = tf.io.parse_sequence_example(example_proto, context_f, seq_f)
+
+        # Return (features, label) tuple of tensors
+        return seq['features'], con[FLAGS.label]
+
+    # Build a list of input TFRecord files
+    target = Path(FLAGS.src).glob(FLAGS.glob)
+    target = [x.as_posix() for x in target]
+
+    # Read files to dataset and apply parsing function
+    raw_tfrecs = tf.data.TFRecordDataset(list(target))
+
+    # Training/test split
+    if FLAGS.speedrun:
+        logging.info("Taking %s examples for validation", FLAGS.batch_size * 10)
+        train = raw_tfrecs.skip(FLAGS.validation_size).take(FLAGS.batch_size * 100)
+        validate = raw_tfrecs.take(FLAGS.batch_size * 10)
+    else:
+        logging.info("Taking %s examples for validation", FLAGS.validation_size)
+        train = raw_tfrecs.skip(FLAGS.validation_size)
+        validate = raw_tfrecs.take(FLAGS.validation_size)
+
+    #train = train.cache()
+    #validate = validate.cache()
+
+    # Prefetch if requested
+    if FLAGS.prefetch:
+        logging.debug("Prefetching data")
+        train = train.prefetch(buffer_size=128)
+        validate = validate.prefetch(buffer_size=128)
+
+    # Repeat if requested
+    if FLAGS.repeat:
+        logging.debug("Repeating dataset")
+        train = train.repeat()
+        validate = validate.repeat()
+
+    # Shuffle if reqested
+    if FLAGS.shuffle_size > 0:
+        logging.debug("Shuffling with buffer size %i", FLAGS.shuffle_size)
+        train = train.shuffle(FLAGS.shuffle_size)
+        validate = validate.shuffle(FLAGS.shuffle_size)
+
+    # Batch
+    logging.debug("Applying batch size %i", hparams[HP_BATCH_SIZE])
+    validate = validate.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
+    train = train.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
+
+    # Parse serialized example Protos before handoff to training pipeline
+    train = train.map(_parse_tfrec, num_parallel_calls=AUTOTUNE)
+    validate = validate.map(_parse_tfrec, num_parallel_calls=AUTOTUNE)
+
+    return train, validate
+
+
+
+def construct_model():
+
+    # Model
+    if FLAGS.mode == 'regression':
+        logging.debug("Running in regresison mode with label: %s", FLAGS.label)
+        head = RegressionHead(name='head')
+        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True, use_attn=FLAGS.attention)
+    else:
+        logging.debug("Running in classification mode with num classes: %i", FLAGS.classes)
+        head = ClassificationHead(classes=FLAGS.classes, name='head')
+        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True, use_attn=FLAGS.attention)
+
+    return model
+
+def train_model(model, train, validate, initial_epoch):
+
+    # Metrics / loss / optimizer
+    if FLAGS.mode == 'regression':
+        metrics = ['mean_absolute_error', 'mean_squared_error']
+        loss = 'mean_squared_error'
+    else:
+        metrics = [
+            tf.keras.metrics.SparseCategoricalAccuracy(),
+            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2),
+        ]
+        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+    optimizer = tf.keras.optimizers.Adam(
+            learning_rate=hparams[HP_LR],
+            epsilon=0.1
+    )
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    if FLAGS.speedrun:
+        steps_per_epoch = 110
+        validation_steps = 15
+
+        # Disabled output printing, slows things down
+        model_callbacks = []
+        # model_callbacks = [ tf.keras.callbacks.LambdaCallback(
+        #         on_epoch_end=lambda x, y: quick_eval(model, train, FLAGS.mode)
+        # )]
+
+    else:
+        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE]
+        model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
+        steps_per_epoch=FLAGS.steps_per_epoch
+
+    if FLAGS.weighted:
+        weights = {i: float(x) for i, x in enumerate(FLAGS.weighted)}
+        logging.debug("Using class weights", weights)
+    else:
+        weights = None
+
+
+
+    fit_args = {
+        'x': train,
+        'epochs': FLAGS.epochs,
+        'steps_per_epoch': steps_per_epoch,
+        'validation_data': validate,
+        'validation_steps': validation_steps,
+        'class_weight': weights,
+        'callbacks': model_callbacks,
+        'initial_epoch': initial_epoch
+    }
+    pretty_args = json.dumps({k: str(v) for k, v in fit_args.items()}, indent=2)
+    logging.info("Fitting model with args: \n%s", pretty_args)
+    history = model.fit(**fit_args)
+
+
+# def tune_hparams(model, callbacks):
+#     session_num = 0
+#     for bs in HP_BATCH_SIZE.domain.values:
+#         for lr in (HP_LR.domain.min_value, HP_LR.domain.max_value):
+#             hparams = {
+#                 HP_BATCH_SIZE: bs,
+#                 HP_LR: lr,
+#             }
+#             run_name = "run-%d" % session_num
+#             print('--- Starting trial: %s' % run_name)
+#             print({h.name: hparams[h] for h in hparams})
+#             train_model(model, hparams, 1, callbacks)
+#             session_num += 1
+
+
+def main(argv):
+
+    FLAGS.levels = [int(x) for x in FLAGS.levels]
+
+    inputs = layers.Input(shape=[128, len(FLAGS.features)], dtype=tf.float32)
+    model = construct_model()
+    outputs = model(inputs)
+
+    checkpoint_dir = os.path.join(FLAGS.artifacts_dir, 'checkpoint')
+    clean_empty_dirs(checkpoint_dir)
+
+    initial_epoch = 0
+    resume_file = FLAGS.resume if FLAGS.resume else None
+
+    if FLAGS.resume_last:
+        # Find directory of latest run
+        chkpt_path = Path(FLAGS.artifacts_dir, 'checkpoint')
+        latest_path = sorted(list(chkpt_path.glob('20*')))[-1]
+        logging.info("Using latest run - %s", latest_path)
+
+        # Find latest checkpoint file
+        latest_checkpoint = sorted(list(latest_path.glob('*.hdf5')))[-1]
+        FLAGS.resume = str(latest_checkpoint.resolve())
+
+    if FLAGS.resume:
+        logging.info("Loading weights from file %s", FLAGS.resume)
+        model.load_weights(FLAGS.resume)
+        initial_epoch = int(re.search('([0-9]*)\.hdf5', FLAGS.resume).group(1))
+        logging.info("Starting from epoch %i", initial_epoch+1)
+
+    global callbacks
+    callbacks = get_callbacks(FLAGS) if not FLAGS.speedrun else []
+
+    global hparams
+    hparams = {
+            HP_LR: FLAGS.lr,
+            HP_BATCH_SIZE: FLAGS.batch_size
+    }
+    hparam_dir = init_hparams(hparams.keys(), FLAGS)
+
+    train, validate = preprocess()
+
+
+    if FLAGS.summary:
+        out_path = os.path.join(FLAGS.artifacts_dir, 'summary.txt')
+        model.summary()
+        save_summary(model, out_path)
+
+        with np.printoptions(precision=3):
+            for x in train.take(1):
+                f, l = x
+                print("Dataset feature tensor shape: %s" % f.shape)
+                print("Dataset label tensor shape: %s" % l.shape)
+                print("First batch labels: %s" % l.numpy())
+                print("First batch element features (truncated):")
+                print(f.numpy()[0][:10])
+            return
+
+    train_model(model, train, validate, initial_epoch)
+
+if __name__ == '__main__':
+  app.run(main)
+"""
+This module provides a Tensorflow 2.0 implementation of a vision
+classification network for Tiny ImageNet.
+"""
+import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import Model
+
+class Tail(layers.Layer):
+
+    def __init__(self, out_width=32):
+        """
+        Arguments:
+            out_width: Number of output feature maps. Default 32.
+        """
+        super().__init__()
+
+        # Construct 7x7/2 convolution layer
+        # No BN / ReLU, handled in later blocks
+        self.conv = layers.Conv1D(
+                filters=out_width,
+                name='Tail_conv',
+                kernel_size=7,
+                strides=1,
+                padding='same',
+                use_bias=False,
+                activation=None,
+        )
+
+
+    def call(self, inputs, training=False, **kwargs):
+        """
+        Runs the forward pass for this layer
+
+        Arguments:
+            input: input tensor(s)
+            training: boolean, whether or not
+
+        Keyword Arguments:
+            Forwarded to call() of each component layer.
+
+        Return:
+            Output of forward pass
+        """
+        _ = self.conv(inputs, **kwargs)
+        return _
+
+class Bottleneck(layers.Layer):
+    """
+    Resnet style residual bottleneck block consisting of:
+        1. 1x1/1 channel convolution, Ni / 4 bottleneck
+        2. 3x3/1 spatial convolution
+        3. 1x1/1 channel convolution, exit width bottleneck
+    """
+
+    def __init__(self, out_width, bottleneck=4):
+        """
+        Constructs a bottleneck block with the final number of output
+        feature maps given by `out_width`. Bottlenecked layers will have
+        output feature map count given by `out_width // bottleneck`.
+
+        Arguments:
+            out_width: Positive integer, number of output feature maps.
+
+            bottleneck: Positive integer, factor by which to bottleneck
+                        relative to `out_width`. Default 4.
+        """
+        super().__init__()
+
+        # 1x1 depthwise convolution, enter the bottleneck
+        self.channel_conv_1 = layers.Conv1D(
+                filters=out_width // bottleneck,
+                name='Bottleneck_enter',
+                kernel_size=1,
+                strides=1,
+                use_bias=False,
+                activation=None,
+        )
+        self.bn1 = layers.BatchNormalization()
+        self.relu1 = layers.ReLU()
+
+        # 3x3 depthwise separable convolution
+        self.spatial_conv = layers.SeparableConv1D(
+                filters=out_width,
+                name='Bottleneck_conv',
+                kernel_size=3,
+                strides=1,
+                use_bias=False,
+                activation=None,
+                padding='same'
+        )
+
+        self.bn2 = layers.BatchNormalization()
+        self.relu2 = layers.ReLU()
+
+        # Merge operation to join residual + main paths
+        self.merge = layers.Add()
+
+    def call(self, inputs, training=False, **kwargs):
+        """
+        Runs the forward pass for this layer
+
+        Arguments:
+            input: input tensor(s)
+            training: boolean, whether or not
+
+        Keyword Arguments:
+            Forwarded to call() of each component layer.
+
+        Return:
+            Output of forward pass
+        """
+
+        # Enter bottleneck, depthwise convolution
+        _ = self.bn1(inputs, training=training)
+        _ = self.relu1(_)
+        _ = self.channel_conv_1(_)
+
+        # Spatial convolution, depthwise separable
+        _ = self.bn2(_, training=training)
+        _ = self.relu2(_)
+        _ = self.spatial_conv(_)
+
+        # Combine residual and main paths
+        return self.merge([inputs, _], **kwargs)
+
+class Downsample(layers.Layer):
+    """
+    Resnet style residual bottleneck block consisting of:
+        1. 1x1/1 depthwise convolution + BN + ReLU (bottlenecked)
+        2. 3x3/1 depthwise separable convolution + BN + ReLU (bottlenecked)
+        3. 1x1/1 depthwise convolution + BN + ReLU
+    """
+
+    def __init__(self, out_width, bottleneck=4, stride=2):
+        """
+        Constructs a downsample block with the final number of output
+        feature maps given by `out_width`. Stride of the spatial convolution
+        layer is given by `stride`. Take care to increase width appropriately
+        for a given spatial downsample.
+
+        The first two convolutions are bottlenecked according to `bottleneck`.
+
+        Arguments:
+            out_width:  Positive integer, number of output feature maps.
+
+            bottleneck: Positive integer, factor by which to bottleneck
+                        relative to `out_width`. Default 4.
+
+            stride:     Positive integer or tuple of positive integers giving
+                        the stride of the depthwise separable convolution layer.
+                        If a single value, row and col stride will be
+                        set to the given value. If a tuple, assign row and
+                        col stride from the tuple as (row, col).  Default 2.
+
+        """
+        super().__init__()
+
+        # 1x1 convolution, enter the bottleneck
+        self.channel_conv_1 = layers.Conv1D(
+                filters=out_width // bottleneck,
+                name='Downsample_enter',
+                kernel_size=1,
+                strides=1,
+                use_bias=False,
+                activation=None,
+        )
+        self.bn1 = layers.BatchNormalization()
+        self.relu1 = layers.ReLU()
+
+        # 3x3 depthwise separable spatial convolution
+        self.spatial_conv = layers.SeparableConv1D(
+                filters=out_width,
+                name='Downsample_conv',
+                kernel_size=3,
+                strides=stride,
+                use_bias=False,
+                activation=None,
+                padding='same'
+        )
+        self.bn2 = layers.BatchNormalization()
+        self.relu2 = layers.ReLU()
+
+
+        # 3x3/2 convolution along main path
+        self.main = layers.Conv1D(
+                filters=out_width,
+                name='Downsample_main',
+                kernel_size=3,
+                strides=stride,
+                use_bias=False,
+                activation=None,
+                padding='same'
+        )
+        self.bn_main = layers.BatchNormalization()
+        self.relu_main = layers.ReLU()
+
+        # Merge operation to join residual + main paths
+        self.merge = layers.Add()
+
+    def call(self, inputs, training=False, **kwargs):
+        """
+        Runs the forward pass for this layer
+
+        Arguments:
+            input: input tensor(s)
+            training: boolean, whether or not
+
+        Keyword Arguments:
+            Forwarded to call() of each component layer.
+
+        Return:
+            Output of forward pass
+        """
+
+        # Enter bottleneck
+        _ = self.bn1(inputs, training=training)
+        _ = self.relu1(_)
+        _ = self.channel_conv_1(_)
+
+        # Spatial convolution
+        _ = self.bn2(_, training=training)
+        _ = self.relu2(_)
+        _ = self.spatial_conv(_)
+
+        # Main path with convolution
+        # TODO can we use first residual BN + ReLU here?
+        m = self.bn_main(inputs, training=training)
+        m = self.relu_main(m)
+        main = self.main(m)
+
+        # Combine residual and main paths
+        return self.merge([main, _])
+
+
+class ClassificationHead(layers.Layer):
+    """
+    Basic vision classification network head consisting of:
+        1. 1D Global average pooling
+        2. Fully connected layer + BN + ReLU
+    """
+
+    def __init__(self, classes, **kwargs):
+        """
+        Arguments:
+            classes:    Positive integer, number of classes in the output of the
+                        fully connected layer.
+
+        Keyword Arguments:
+            Forwarded to the dense layer.
+        """
+        super(ClassificationHead, self).__init__(**kwargs)
+
+        self.global_avg = layers.GlobalAveragePooling1D()
+
+        self.dense = layers.Dense(
+                units=classes,
+                use_bias=True,
+                activation=None,
+                name='Head_dense2',
+        )
+
+        self.softmax = layers.Softmax()
+
+
+    def call(self, inputs, training=False, **kwargs):
+        _ = self.global_avg(inputs)
+        _ = self.dense(_)
+        _ = self.softmax(_) if not training else _
+        return _
+
+class RegressionHead(layers.Layer):
+    """
+    Basic vision classification network head consisting of:
+        1. 1D Global average pooling
+        2. Fully connected layer + BN + ReLU
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Arguments:
+            classes:    Positive integer, number of classes in the output of the
+                        fully connected layer.
+
+        Keyword Arguments:
+            Forwarded to the dense layer.
+        """
+        super(RegressionHead, self).__init__(**kwargs)
+
+        self.pooling = layers.GlobalAveragePooling1D()
+
+        self.dense = layers.Dense(
+                units=1,
+                use_bias=True,
+                activation=None,
+                name='Head_dense',
+        )
+        self.flatten = layers.Flatten()
+
+
+    def call(self, inputs, training=False, **kwargs):
+        _ = self.pooling(inputs)
+        _ = self.dense(_)
+        #_ = self.flatten(_)
+        return _
+
+class TraderNet(tf.keras.Model):
+
+    def __init__(self, levels, use_head=True, use_tail=True, use_attn=True):
+        """
+        Arguments:
+            levels: List of positive integers. Each list entry denotes a level of
+                    downsampling, with the value of the i'th entry giving the number
+                    of times the bottleneck layer is repeated at the i;th level
+
+            use_head: boolean, if true include a default network head
+            use_tail: boolean, if true include a default network tail
+
+        Keyword Arguments:
+            Forwarded to tf.keras.Model
+        """
+        super().__init__()
+        width = 32
+
+        self.use_attn = use_attn
+
+
+        # Use default tail if requested in params
+        if use_tail == True:
+            self.tail = Tail(out_width=width)
+        elif not use_tail == None:
+            self.tail = use_tail
+        else:
+            self.tail = None
+
+        # Loop through levels and their parameterized repeat counts
+        self.blocks = list()
+        for level, repeats in enumerate(levels):
+
+            # Create `repeats` Bottleneck blocks and add to the block list
+            for block in range(repeats):
+                bottleneck_layer = Bottleneck(out_width=width)
+                self.blocks.append(bottleneck_layer)
+
+            # Create a downsample layer that doubles width
+            # Default stride=2
+            downsample_layer = Downsample(out_width=2*width)
+            self.blocks.append(downsample_layer)
+
+            # Update `width` for the next iteration
+            width *= 2
+
+        self.final_bn = layers.BatchNormalization(name='bn')
+        self.final_relu = layers.ReLU(name='relu')
+
+        if self.use_attn:
+            self.attention = MultiHeadAttention(d_model=512,
+                    num_heads=8, name='attn')
+
+        # Use default head if requested in params
+        if use_head == True:
+            self.head = RegressionHead()
+        elif not use_head == None:
+            self.head = use_head
+        else:
+            self.head = None
+
+
+    def call(self, inputs, training=False, **kwargs):
+        """
+        Runs the forward pass for this layer
+
+        Arguments:
+            input: input tensor(s)
+            training: boolean, whether or not
+
+        Keyword Arguments:
+            Forwarded to call() of each component layer.
+
+        Return:
+            Output of forward pass
+        """
+        _ = self.tail(inputs, training=training) if self.tail else inputs
+
+        # Loop over encoder layers by level
+        for layer in self.blocks:
+            _ = layer(_, training=training)
+
+        # Finish up last level
+        _ = self.final_bn(_, training=training)
+        _ = self.final_relu(_)
+
+        if self.use_attn: _ = self.attention(inputs=[_, _, _])
+
+        return self.head(_, training=training, **kwargs) if self.head else _
+
+# https://www.tensorflow.org/beta/tutorials/text/transformer
+class MultiHeadAttention(layers.Layer):
+
+  def __init__(self, d_model, num_heads, **kwargs):
+    super(MultiHeadAttention, self).__init__(**kwargs)
+    self.num_heads = num_heads
+    self.d_model = d_model
+
+    assert d_model % self.num_heads == 0
+
+    self.depth = d_model // self.num_heads
+
+    self.wq = tf.keras.layers.Dense(d_model, name='wQ')
+    self.wk = tf.keras.layers.Dense(d_model, name='wK')
+    self.wv = tf.keras.layers.Dense(d_model, name='wV')
+
+    self.attention = layers.Attention(use_scale=True, name='dotprod_attn')
+    self.dense = tf.keras.layers.Dense(d_model, name='attn_dense')
+    self.norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+
+  def split_heads(self, x, batch_size):
+    """Split the last dimension into (num_heads, depth).
+    Transpose the result such that the shape is (batch_size, num_heads, seq_len, depth)
+    """
+    x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
+    return tf.transpose(x, perm=[0, 2, 1, 3])
+
+  def call(self, inputs, training=False):
+
+    q, v, k = inputs
+    batch_size = tf.shape(q)[0]
+
+    q = self.wq(q)  # (batch_size, seq_len, d_model)
+    k = self.wk(k)  # (batch_size, seq_len, d_model)
+    v = self.wv(v)  # (batch_size, seq_len, d_model)
+
+    q = self.split_heads(q, batch_size)  # (batch_size, num_heads, seq_len_q, depth)
+    k = self.split_heads(k, batch_size)  # (batch_size, num_heads, seq_len_k, depth)
+    v = self.split_heads(v, batch_size)  # (batch_size, num_heads, seq_len_v, depth)
+
+    # scaled_attention.shape == (batch_size, num_heads, seq_len_q, depth)
+    # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
+    attn = self.attention(inputs=[q, v, k])
+
+    attn = tf.transpose(attn, perm=[0, 2, 1, 3])  # (batch_size, seq_len_q, num_heads, depth)
+
+    attn = tf.reshape(attn, (batch_size, -1, self.d_model))  # (batch_size, seq_len_q, d_model)
+
+    _ = self.dense(attn)  # (batch_size, seq_len_q, d_model)
+
+    return self.norm(_)
+#!python
+import os
+from absl import app
+from absl import flags
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string(
+    'src',
+    os.environ.get('SRC_DIR', ''),
+    'Dataset source directory'
+)
+
+flags.DEFINE_string(
+    'glob',
+    'part-r-*',
+    'Shell glob pattern for TFRecord file matching'
+)
+
+flags.DEFINE_string(
+    'artifacts_dir',
+    os.environ.get('ARTIFACTS_DIR', ''),
+    'Destination directory for checkpoints / Tensorboard logs'
+)
+
+flags.DEFINE_bool(
+    'dry',
+    False,
+    'If true, dont write Tensorboard logs or checkpoint files'
+)
+
+flags.DEFINE_integer(
+    'batch_size',
+    256,
+    'Batch size for training'
+)
+
+flags.DEFINE_integer(
+    'past',
+    128,
+    'Size of the historical window'
+)
+
+flags.DEFINE_bool(
+    'summary',
+    False,
+    'Print a model summary and exit'
+)
+
+flags.DEFINE_bool(
+    'tune',
+    False,
+    'Run one epoch for each hyperparam setting and exit'
+)
+
+flags.DEFINE_bool(
+    'attention',
+    True,
+    'If true, include a multi-head attention layer'
+)
+
+flags.DEFINE_integer(
+    'shuffle_size',
+    1024,
+    'Size of the shuffle buffer. If 0, do not shuffle input data.'
+)
+
+flags.DEFINE_bool(
+    'prefetch',
+    True,
+    'Whether to prefetch TF dataset'
+)
+
+flags.DEFINE_bool(
+    'repeat',
+    True,
+    'Repeat the input dataset'
+)
+
+flags.DEFINE_string(
+    'mode',
+    'classification',
+    'Set to classification or regression'
+)
+
+flags.DEFINE_list(
+    'levels',
+    [3, 3, 5, 2],
+    'Levels to use in the TraderNet encoder architecture.'
+)
+
+flags.DEFINE_integer(
+    'classes',
+    3,
+    'Number of output classes if running in classification mode.'
+)
+
+flags.DEFINE_list(
+    'features',
+    ['position', 'volume', 'close'],
+    'Features to use in the training pipeline'
+)
+
+flags.DEFINE_string(
+    'label',
+    'label',
+    'TFRecord element to treat as training label'
+)
+
+flags.DEFINE_integer(
+    'epochs',
+    100,
+    'Number of training epochs'
+)
+
+flags.DEFINE_integer(
+    'steps_per_epoch',
+    4000,
+    'Number of batches to include per epoch'
+)
+
+flags.DEFINE_integer(
+    'validation_size',
+    10000,
+    'Number of examples to include in the validation set'
+)
+
+flags.DEFINE_float(
+    'lr',
+    0.001,
+    'Learning rate'
+)
+
+flags.DEFINE_string(
+    'checkpoint_fmt',
+    'trader_{epoch:02d}.hdf5',
+    'Format to use when writing checkpoints'
+)
+
+flags.DEFINE_string(
+    'checkpoint_freq',
+    'epoch',
+    'Checkpoint frequency passed to tf.keras.callbacks.ModelCheckpoint'
+)
+
+flags.DEFINE_string(
+    'tb_update_freq',
+    'epoch',
+    'Update frequency passed to tf.keras.callbacks.TensorBoard'
+)
+
+flags.DEFINE_bool(
+    'speedrun',
+    False,
+    'If true, run a small epoch and evaluate the model'
+)
+
+flags.DEFINE_string(
+    'resume',
+    None,
+    'Resume from the specified model checkpoint filepath'
+)
+
+flags.DEFINE_bool(
+    'resume_last',
+    None,
+    'Attempt to resume from the most recent checkpoint'
+)
+
+flags.DEFINE_list(
+    'weighted',
+    None,
+    ('A list of weights to use for each class.'
+     'must have len(weighted) == num classes')
+)
+
+flags.register_validator(
+    'src',
+    lambda v: os.path.isdir(v) and os.access(v, os.R_OK),
+    message='--src must point to an existing directory'
+)
+
+flags.register_validator(
+    'artifacts_dir',
+    lambda v: os.path.isdir(v) and os.access(v, os.W_OK),
+    message='--artifacts_dir must point to an existing directory'
+)
+
+flags.register_validator(
+    'batch_size',
+    lambda v: v > 0,
+    message='--batch_size must be an int > 0'
+)
+
+flags.register_validator(
+    'shuffle_size',
+    lambda v: v >= 0,
+    message='--shuffle_size must an int >= 0'
+)
+
+flags.register_validator(
+    'mode',
+    lambda v: v in ['classification', 'regression'],
+    message='--mode must classification or regression'
+)
+
+flags.register_validator(
+    'levels',
+    lambda v: len(v) > 0,
+    message='--levels must be a non-empty list of integers'
+)
+
+flags.register_validator(
+    'classes',
+    lambda v: v > 0,
+    message='--classes must be an integer > 0'
+)
+
+flags.register_validator(
+    'epochs',
+    lambda v: v > 0,
+    message='--epochs must be an integer > 0'
+)
+
+flags.register_validator(
+    'steps_per_epoch',
+    lambda v: v >= 0,
+    message='--steps_per_epoch must be an integer >= 0'
+)
+
+flags.register_validator(
+    'validation_size',
+    lambda v: v >= 0,
+    message='--validation_size must be an integer >= 0'
+)
+
+flags.register_validator(
+    'lr',
+    lambda v: 0 < v < 1.0,
+    message='--lr must be an float on interval (0.0, 1.0)'
+)
+
+flags.register_validator(
+    'checkpoint_fmt',
+    lambda v: len(v) > 0,
+    message='--checkpoint_fmt must be a non-empty string'
+)
+
+flags.register_validator(
+    'resume',
+    lambda v: v == None or os.path.isfile(v),
+    message='--resume must point to an existing checkpoint file'
+)
+
+flags.register_validator(
+    'weighted',
+    lambda v: v == None or len(v) == FLAGS.classes,
+    message='--resume must point to an existing checkpoint file'
+)
+#!python3
+
+#!python3
+import os
+import sys
+import itertools
+from pathlib import Path
+
+import os
+from enum import Enum
+import tensorflow as tf
+from datetime import datetime
+from tensorflow.keras.callbacks import ModelCheckpoint, ProgbarLogger
+import tensorflow.feature_column as fc
+from tensorboard.plugins.hparams import api as hp
+from absl import logging
+
+
+DATE = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+@tf.function
+def standardize(f, axis=-1):
+    mean, var = tf.nn.moments(f, axes=axis, keepdims=True)
+    length = tf.shape(f, out_type=tf.int32)[axis]
+    length = tf.cast(length, tf.float32)
+
+    std = tf.math.maximum(tf.math.sqrt(var), 1.0 / tf.math.sqrt(length))
+    n = (f - mean) / std
+    return n
+
+def get_callbacks(FLAGS):
+
+    checkpoint_dir = os.path.join(FLAGS.artifacts_dir, 'checkpoint', DATE)
+    logging.info("Model checkpoint dir: %s", checkpoint_dir)
+    tb_dir = os.path.join(FLAGS.artifacts_dir, 'tblogs')
+    logging.info("Tensorboard log dir: %s", tb_dir)
+
+
+    # Reduce learning rate if loss isn't improving
+    learnrate_args = {
+            'monitor':'loss',
+            'factor': 0.5,
+            'patience': 3,
+            'min_lr': 0.0001
+    }
+    logging.info("ReduceLROnPlateau: %s", learnrate_args)
+    learnrate_cb = tf.keras.callbacks.ReduceLROnPlateau(**learnrate_args)
+
+    # Stop early if loss isn't improving
+    stopping_args = {
+            'monitor':'loss',
+            'min_delta': 0.001,
+            'patience': 5,
+    }
+    logging.info("EarlyStopping: %s", learnrate_args)
+    stopping_cb = tf.keras.callbacks.EarlyStopping(**stopping_args)
+
+    # Skip IO callbacks if requested
+    if FLAGS.dry:
+        return [learnrate_cb, stopping_cb ]
+
+    os.makedirs(tb_dir, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # Periodic model weight checkpointing
+    chkpt_fmt = os.path.join(checkpoint_dir, FLAGS.checkpoint_fmt)
+    chkpt_cb = ModelCheckpoint(
+        filepath=chkpt_fmt,
+        save_freq='epoch',
+        save_weights_only=True
+    )
+
+    # Log to Tensorboard
+    tensorboard_cb = tf.keras.callbacks.TensorBoard(
+        log_dir=os.path.join(tb_dir, DATE),
+        write_graph=True,
+        histogram_freq=1,
+        embeddings_freq=3,
+        update_freq='epoch'
+    )
+    file_writer = tf.summary.create_file_writer(tb_dir + "/metrics")
+    file_writer.set_as_default()
+
+    callbacks = [
+        chkpt_cb,
+        tensorboard_cb,
+        learnrate_cb,
+        stopping_cb
+    ]
+
+    return callbacks
+
+def init_hparams(hparams, FLAGS):
+
+    hparam_dir = os.path.join(FLAGS.artifacts_dir, 'tblogs')
+    os.makedirs(hparam_dir, exist_ok=True)
+
+    metric = hp.Metric('sparse_categorical_accuracy', display_name='acc')
+
+    with tf.summary.create_file_writer(hparam_dir).as_default():
+        hp.hparams_config(
+            hparams=hparams,
+            metrics=[metric],
+        )
+
+    return hparam_dir
+
+def save_summary(model, filepath, line_length=80):
+    logging.info("Saving model summary to file: %s", filepath)
+    with open(filepath, 'w') as fh:
+        model.summary(
+                print_fn=lambda x: fh.write(x + '\n'),
+                line_length=line_length
+        )
+
+def quick_eval(model, validate, mode, top=10):
+    for x in validate:
+        f, l = x
+        out, truth = model.predict(f)[:top], l.numpy()[:top]
+        if mode == 'classification':
+            print("Predictions (pmf, argmax, truth):")
+            for o, t in zip(out, truth):
+                print("%s, %s, %s" % (o.round(4), o.argmax(), t))
+        else:
+            print("Predictions (pred, truth):")
+            for o, t in zip(out, truth):
+                print("%s, %s" % (o.round(4), t))
+
+def clean_empty_dirs(path):
+    logging.debug("Checking dir for cleaning: %s", path)
+    for p in Path(path).glob('2*/'):
+        if not list(p.glob('*')):
+            logging.info('Removing empty directory: %s', p)
+            p.rmdir()
+        logging.debug('Ignoring non-empty checkpoint directory: %s', p)
+
+import org.apache.spark.sql._
+import org.apache.spark.sql.functions._
+import org.apache.spark.ml.{Pipeline, PipelineStage, Transformer, UnaryTransformer}
+import org.apache.spark.ml.feature._
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.ml.linalg.{Vector, VectorUDT, DenseVector}
+import org.apache.spark.sql.expressions.Window
+import scopt.OParser
+import org.apache.spark.sql.types._
+import org.apache.log4j.{Level, Logger}
+
+object Trader {
+
+  @transient lazy val log = Logger.getLogger(getClass.getName)
+  log.info("Writing TFRecords")
+  val spark = SparkSession.builder.appName("trader").getOrCreate()
+
+  val sc = spark.sparkContext
+  import spark.implicits._
+
+  /* Define UDF for Vector to Array conversion */
+  val toArr: Any => Array[Double] = _.asInstanceOf[DenseVector].toArray
+  val vec_to_array = udf(toArr)
+
+  val feature_cols = Array("high", "low", "open", "close", "volume", "position")
+
+  /* Schema of source dataset */
+  val schema = StructType(
+    StructField("date", DateType) ::
+    StructField("volume", IntegerType) ::
+    StructField("open", FloatType) ::
+    StructField("close", FloatType) ::
+    StructField("high", FloatType) ::
+    StructField("low", FloatType) ::
+    StructField("adjclose", FloatType) :: Nil)
+
+
+  /* Column to encode day of year with a sin function */
+  val positionalEncoding: DataFrame => DataFrame = {
+    _.withColumn("position", sin(lit(3.14) * dayofyear('date) / lit(365)))
+  }
+
+  /* Use ratio of adjclose / close to rescale other price metrics */
+  val rescalePrices: DataFrame => DataFrame = {
+    val targets = Seq("high", "low", "open")
+    val ratio = 'adjclose / 'close
+
+    /* Create new columns for each in targets, drop old cols and rename new cols */
+    _.select($"*" +: targets.map(c => (col(c) * ratio).alias(s"adj$c")): _*)
+     .drop("close" +: targets: _*)
+     .select($"*"+: $"adjclose".alias("close") +: targets.map(c => col(s"adj$c").alias(c)): _*)
+     .drop("adjclose" +: targets.map(c => s"adj$c"): _*)
+  }
+
+  /* Calculate percent change in future close price by user supplied window */
+  val getPercentChange: DataFrame => DataFrame = {
+    val window = Window
+      .partitionBy('symbol)
+      .orderBy("date")
+      .rowsBetween(Window.currentRow, Window.currentRow + 5)
+
+    val change_col = (avg($"close").over(window) - $"close") / $"close" * lit(100)
+
+    _.withColumn("change", change_col)
+  }
+
+  /* Discard dates older than a threshold year */
+  val filterByDate = (thresh: Int, df: DataFrame) => {
+    df.filter(year($"date") > thresh)
+  }
+
+  /* Filter where abs(percent change) > thresh */
+  val filterByChange = (thresh: Double, df: DataFrame) => {
+    df.filter(abs($"change") <= thresh)
+  }
+
+  /**
+   Filter where groupBy(symbol).avg(close) < some cutoff.
+   Here use a value slightly higher than 1.0 for penny stocks
+  */
+  val filterPennyStocks = (df: DataFrame) => {
+    df.groupBy('symbol)
+      .agg(avg('close).as("avg_close"))
+      .filter('avg_close > 0.8)
+      .withColumnRenamed("symbol", "symbol2")
+      .join(df, $"symbol" === $"symbol2")
+      .drop("symbol2", "avg_close")
+  }
+
+  /* Performs rollup of features over a historical window to a nested array */
+  val getFeatureMatrix = (past: Int, stride: Int, df: DataFrame) => {
+
+    /* Window function to collect historical prices */
+    val past_window = Window
+      .partitionBy("symbol")
+      .orderBy(desc("date"))
+      .rowsBetween(Window.currentRow - past + 1, Window.currentRow)
+
+    val collected_col = collect_list(vec_to_array($"features")).over(past_window)
+
+    df.withColumn("dense_features", collected_col)
+      .drop("features")
+      .withColumnRenamed("dense_features", "features")
+      .filter(size($"features") === past)
+      .filter((dayofyear('date) % stride) === 0)
+  }
+
+
+  /* Recast multiple DataFrame columns given a map of column names to types*/
+  val recastColumns = (m: Map[String, DataType], df: DataFrame) => {
+     val oldKeys = m.keySet.toSeq
+     val tempKeys = oldKeys.map(c => col(c).cast(m(c)).alias(s"cast$c"))
+     val newKeys = oldKeys.map(c => col(s"cast$c").alias(c))
+
+      df.select($"*" +: tempKeys : _*)
+        .drop(oldKeys: _*)
+        .select($"*" +: newKeys: _*)
+        .drop(oldKeys.map(c => s"cast$c"): _*)
+  }
+
+
+  def main(args: Array[String]) {
+    Logger.getRootLogger.setLevel(Level.WARN)
+    log.info("Started trader")
+
+    OParser.parse(TraderArgs.parser1, args, Config()) match {
+      case Some(config) => run(config)
+      case _ => log.error("Stopping")
+    }
+  }
+
+  def run(config: Config) {
+
+    /* Writes to CSV given subdir and DataFrame based on config.out path */
+    def writeCsv: (String, DataFrame) => Unit = config.out match {
+      case Some(x) => (subdir, df) => {
+        df.repartition(1)
+          .write.mode("overwrite").option("header", "true")
+          .csv(x + "/" + subdir)
+      }
+      case _ => (subdir, df) => Unit
+    }
+
+    /* Vectorizer collects features into a vector */
+    val vectorizer = new VectorAssembler().setInputCols(feature_cols).setOutputCol("raw_features")
+
+    /* Per-feature standardization / scale */
+    val norm = config.norm match {
+      case Some(x: MaxAbsScaler) => x.setInputCol("raw_features").setOutputCol("features")
+      case Some(x: StandardScaler) => x.setInputCol("raw_features").setOutputCol("features").setWithMean(true).setWithStd(true)
+      case _ => None
+    }
+
+    /* Choose a label pipeline stage based on CLI flags */
+    val labeler = config.quantize match {
+				case Some(x) => new QuantileDiscretizer().setNumBuckets(x).setInputCol("change").setOutputCol("label")
+				case _ => config.bucketize match {
+					case Some(x) => new Bucketizer().setSplits(x).setInputCol("change").setOutputCol("label")
+					case _ => None
+        }
+		}
+
+    val stages = Array(vectorizer, norm, labeler).map{
+			case Some(x: PipelineStage) => Some(x)
+			case x: PipelineStage => Some(x)
+      case None => None
+		}.flatten
+    val pipeline = new Pipeline().setStages(stages)
+
+    /* Read raw CSV, zip with hash value indicating file source */
+    val raw_df = spark
+      .read
+      .option("header", "true")
+      .schema(schema)
+      .csv(config.in)
+      .withColumn("symbol", hash(input_file_name()))
+
+    val results_df = ((df: DataFrame) => filterByDate(config.date, df))
+      .andThen(filterPennyStocks)
+      .andThen(getPercentChange)
+      .andThen(config.max_change match {
+        case Some(x) => (df: DataFrame) => filterByChange(x, df)
+        case _ => (df: DataFrame) => df
+      })
+      .andThen(positionalEncoding)
+      .apply(raw_df)
+      .cache()
+
+    /* Run Spark pipeline for feature extraction */
+		val df = pipeline
+			.fit(results_df)
+      .transform(results_df)
+      .cache()
+		results_df.unpersist()
+
+    /* Generate an output DataFrame and show results */
+    val display_df = df.select("symbol", "date", "features", "label", "change")
+
+    println("Processed DataFrame before feature matrix rollup:")
+    display_df.show()
+    display_df.printSchema
+
+    println("Processed DataFrame label stats")
+    val raw_stats_df = df.select("label", "change" +: feature_cols: _*).describe()
+    raw_stats_df.show()
+    writeCsv("stats", raw_stats_df)
+
+    println("Average percent change within a label:")
+    display_df
+      .groupBy('label)
+      .agg(count("label").as("count"), avg("change").as("avg_change"))
+      .orderBy(desc("label"))
+      .show()
+
+   /* Collect features over historical window to a matrix */
+   val recast = Map("change" -> FloatType, "label" -> IntegerType)
+
+   /* Perform feature matrix rollup */
+   val dense_df = ((df: DataFrame) => getFeatureMatrix(config.past, config.stride, df))
+      .andThen((df: DataFrame) => recastColumns(recast, df))
+      .apply(df.select($"symbol", $"date", $"features", $"label", $"change"))
+      .cache()
+
+    println("Dense DataFrame: Dates should be strided here")
+    dense_df.show()
+
+    /* If requested, write TFRecords */
+    config.out match {
+      case Some(path) => {
+        log.info("Writing TFRecords")
+
+        val write_df = dense_df.drop("date", "symbol").repartition(config.shards)
+        println("Write DataFrame schema:")
+        write_df.printSchema
+
+        println("Write DataFrame metrics:")
+        val metric_df = write_df
+          .groupBy('label)
+          .agg(count("label"), avg("change"), max("change"), min("change"))
+          .orderBy(desc("label"))
+        metric_df.show()
+
+        writeCsv("metrics", metric_df)
+
+        write_df.write
+          .format("tfrecords")
+          .mode("overwrite")
+          .option("recordType", "SequenceExample")
+          .save(path + "/tfrecords")
+      }
+      case _ => Unit
+    }
+  }
+}
+/**
+ Handles argument parsing for Trader main() method
+*/
+
+import scopt.OParser
+import org.apache.spark.ml.{Pipeline, PipelineStage}
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.ml.feature._
+
+case class Config(
+    in: String = "",
+    out: Option[String] = None,
+    date: Int = 2010,
+    past: Int = 128,
+    future: Int = 1,
+    quantize: Option[Int] = None,
+    bucketize: Option[Array[Double]] = None,
+    shards: Int = 100,
+    max_change: Option[Double] = None,
+    norm: Option[PipelineStage] = None,
+    penny: Boolean = false,
+    stride: Int = 5
+)
+
+object TraderArgs {
+
+  val builder = OParser.builder[Config]
+  val parser1 = {
+    import builder._
+    OParser.sequence(
+      programName("trader"),
+      head("trader", "1.0"),
+
+      opt[String]('o', "out")
+        .valueName("<path>")
+        .action((x, c) => c.copy(out = x match {
+          case x: String => Some(x)
+          case _ => None
+        }))
+        .text("output file path"),
+
+      opt[String]('n', "norm")
+        .valueName("std, maxabs")
+        .validate(x =>
+          x match {
+            case "std" | "maxabs" => success
+            case _ => failure("norm must be one of std,maxabs")
+          }
+        )
+        .action((x, c) => c.copy(norm = x match {
+          case "std" => Some(new StandardScaler())
+          case "maxabs" => Some(new MaxAbsScaler())
+          case _ => None
+        }))
+        .text("Normalization strategy, StandardScaler or MaxAbsScaler"),
+
+      opt[Int]('d', "date")
+        .valueName("<year>")
+        .validate(x =>
+          if (x > 0) success
+          else failure("Value <year> must be >0")
+        )
+        .action((x, c) => c.copy(date = x))
+        .text("limit to records newer than <year>"),
+
+      opt[Int]('p', "past")
+        .valueName("<int>")
+        .validate(x =>
+          if (x > 0) success
+          else failure("Value <int> must be >0")
+        )
+        .action((x, c) => c.copy(past = x))
+        .text("aggregate past <int> records into an example"),
+
+      opt[Int]("stride")
+        .valueName("<int>")
+        .validate(x =>
+            if(x > 0) success
+            else failure("Value <int> must be >0")
+        )
+        .action((x, c) => c.copy(stride = x))
+        .text("stride training example window by <int> days"),
+
+      opt[Int]('f', "future")
+        .valueName("<int>")
+        .validate(x =>
+          if (x > 0) success
+          else failure("Value <int> must be >0")
+        )
+        .action((x, c) => c.copy(future = x))
+        .text("calculate percent change over <int> following days. if >1, use averaging"),
+
+      opt[Double]("max-change")
+        .valueName("<float>")
+        .validate(x =>
+          if (x > 0) success
+          else failure("Value <float> must be >0")
+        )
+        .action((x, c) => c.copy(max_change = Some(x)))
+        .text("drop examples with absolute percent change > <float>"),
+
+      opt[Int]('s', "shards")
+        .valueName("<int>")
+        .validate(x =>
+          if (x > 0) success
+          else failure("Value <int> must be >0")
+        )
+        .action((x, c) => c.copy(shards = x))
+        .text("split the TFRecord set into <int> shards"),
+
+      opt[Int]("quantize")
+        .valueName("<int>")
+        .validate(x =>
+            if(x > 1) success
+            else failure("Value <int> must be >1")
+        )
+        .action((x, c) => c.copy(quantize = Some(x)))
+        .text("run QuantileDiscretizer to <int> buckets"),
+
+      opt[Seq[Double]]("bucketize")
+        .valueName("<float>,[float,...]")
+        .action((x, c) => c.copy(bucketize = Some(
+					Array(Double.NegativeInfinity +: x :+ Double.PositiveInfinity : _*)
+				)))
+        .text("run Bucketizer with the given buckets"),
+
+      opt[Unit]("penny-stocks")
+        .text("if set, allow penny stocks. default false"),
+
+      help("help").text("prints this usage text"),
+
+      note("Note: TFRecords will be written if output file path is specified" + sys.props("line.separator")),
+      note("Writing many TFRecords has a high RAM requirement." + sys.props("line.separator")),
+
+      arg[String]("<shell_glob>")
+        .required()
+        .valueName("<shell_glob>")
+        .action((x, c) => c.copy(in = x))
+        .text("input file shell glob pattern")
+    )
+  }
+}

@@ -1,3 +1,7 @@
+---
+header-includes:
+  - \usepackage{graphicx}
+---
 # TraderNet
 
 TraderNet was created as a final project for CS6350 - big data. It
@@ -11,8 +15,8 @@ architecture implemented in Tensorflow.
 
 ### Dataset
 
-The input dataset consists of PLACEHOLDER CSV files, each of which
-contains historical price records for a stock symbol from PLACEHOLDER
+The input dataset consists of approximately $8000$ CSV files, each of which
+contains historical price records for a stock symbol from 1970
 to 2018. Each record consists of the following columns:
 
 ```
@@ -34,7 +38,7 @@ measure closing price over the history of the stock.
 Several filtering techniques can be applied to the input dataset in
 order to produce higher quality training examples. One such technique
 is the ability to remove records older than a parameterized year.
-Since the dataset contains records dating back to PLACEHOLDER, the
+Since the dataset contains records dating back to 1970, the
 ability to constrain to more recent records may prove useful in
 capturing market behavior under modern trading styles.
 
@@ -58,7 +62,7 @@ f(x) = sin\left(\frac{\pi x}{365}\right)
 $$
 
 This function transforms a day of year into a real number on a
-continuous interval from $[0, 1]$. Under this transformation, day
+continuous interval from $0, 1$. Under this transformation, day
 $365$ and day $1$ will have similar values, capturing the idea that
 December 31st and January 1st are close to each other. It is worth
 noting that each point under this transformation will be produced by
@@ -125,7 +129,7 @@ discretized labels for each record.
 2. Normalizer - A strategy to normalize each feature to a shared
 	domain. Can be one of the following, or excluded entirely:
 	* `StandardScaler` - Rescale each feature to zero mean unit variance
-	* `MaxAbsScaler` - Rescale each feature to the range $\[0, 1\]$,
+	* `MaxAbsScaler` - Rescale each feature to the range $0, 1$,
 		**preserving sparsity**
 
 3. Labeler - A strategy to assign examples a discretized label based
@@ -242,12 +246,14 @@ If we assume that each feature and the percent change is stored as a
 $32$ bit float and the label is stored as an $8$ bit integer, we can
 calculated the expected size of the resultant training set in
 
-\begin{align}
-	features &= N \left(128 * 6 * 4) \\
-	labels &= N \left(4 + 1) \\
+$$
+\begin{aligned}
+	features &= N \left(128 * 6 * 4\right) \\
+	labels &= N \left(4 + 1\right) \\
 	S &= labels + features \\
 	&\approx 230 GB
-\end{align}
+\end{aligned}
+$$
 
 ## Interfacing with Tensorflow
 
@@ -466,8 +472,6 @@ used to package a fat JAR file. The fat JAR file contains all
 dependencies (like spark-tensorflow-connector) but can become large.
 Build the fat JAR locally using `sbt assembly`.
 
-TODO You can also build this with docker or pull it somehow.
-
 The program provides usage instructions via the `--help` flag as follows:
 
 ```
@@ -663,7 +667,10 @@ accuracy for several (interrupted) runs. Validation top 1 categorical
 accuracy reached as high as $51\%$, while top 2 categorical accuracy
 reached $74\%$.
 
+
 ![Top 1 Accuracy](./epoch_sparse_categorical_accuracy.svg)
+
+
 ![Top 2 Accuracy](./epoch_sparse_top_k_categorical_accuracy.svg)
 
 
