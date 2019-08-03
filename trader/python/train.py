@@ -111,11 +111,13 @@ def construct_model():
 
     # Model
     if FLAGS.mode == 'regression':
+        logging.debug("Running in regresison mode with label: %s", FLAGS.label)
         head = RegressionHead(name='head')
-        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True)
+        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True, use_attn=FLAGS.attention)
     else:
+        logging.debug("Running in classification mode with num classes: %i", FLAGS.classes)
         head = ClassificationHead(classes=FLAGS.classes, name='head')
-        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True)
+        model = TraderNet(levels=FLAGS.levels, use_head=head, use_tail=True, use_attn=FLAGS.attention)
 
     return model
 
