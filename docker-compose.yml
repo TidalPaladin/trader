@@ -51,11 +51,11 @@ services:
     ports:
       - 6006:6006
     runtime: nvidia
+    # Env vars are read from .env file
     volumes:
-      - ${DEST_DIR}:/data
-      - ${ARTIFACT_DIR}:/artifacts
-      - /home/tidal/Documents/trader/trader/python:/app
+      - ${DEST_DIR}:/data # Source directory. Expect a tfrecords subdir by default
+      - ${ARTIFACT_DIR}:/artifacts # Log files / model checkpoints go here
     environment:
-      - CUDA_VISIBLE_DEVICES
+      - CUDA_VISIBLE_DEVICES # Passthrough from .env file to expose only one GPU
       - SRC_DIR=/data/tfrecords
       - ARTIFACTS_DIR=/artifacts
