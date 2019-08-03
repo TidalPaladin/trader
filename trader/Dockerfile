@@ -3,7 +3,7 @@ FROM tensorflow/tensorflow:${upstream} as base
 
 RUN pip install pyspark
 
-VOLUME [ "/data/tfrecords", "/artifacts" ]
+VOLUME [ "/data", "/artifacts" ]
 
 # Expose Tensorboard ports
 EXPOSE 6006/tcp 6006/udp
