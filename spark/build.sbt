@@ -16,9 +16,9 @@ mainClass in assembly := Some("Trader")
 fullClasspath in assembly := (fullClasspath in Runtime).value
 
 libraryDependencies ++= Seq(
-	"org.apache.spark" %% "spark-core" % sparkVersion,
-  "org.apache.spark" %% "spark-sql" % sparkVersion,
-	"org.apache.spark" %% "spark-mllib" % sparkVersion,
+	"org.apache.spark" %% "spark-core" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
+	"org.apache.spark" %% "spark-mllib" % sparkVersion % "provided",
 	"org.tensorflow" %% "spark-tensorflow-connector" % "1.14.0",
 	"com.github.scopt" % "scopt_2.11" % "4.0.0-RC2"
 )
