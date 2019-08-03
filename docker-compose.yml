@@ -40,7 +40,12 @@ services:
       - DEST_DIR
 
   trader:
-    build: ./trader
+    build:
+      context: ./trader
+      args:
+        # Must be a 2.X Tensorflow release
+        upstream: 2.0.0b1-gpu-py3
+        #upstream: 2.0.0b1-py3    # CPU version if desried
     container_name: trader
     networks: [sparknet]
     ports:

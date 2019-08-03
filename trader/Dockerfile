@@ -1,4 +1,5 @@
-FROM tensorflow/tensorflow:2.0.0b1-gpu-py3 as base
+ARG upstream=2.0.0b1-gpu-py3
+FROM tensorflow/tensorflow:${upstream} as base
 
 RUN pip install pyspark
 
