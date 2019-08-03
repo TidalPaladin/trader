@@ -252,14 +252,8 @@ class ClassificationHead(layers.Layer):
         super(ClassificationHead, self).__init__(**kwargs)
 
         self.global_avg = layers.GlobalAveragePooling1D()
-        self.dense1 = layers.Dense(
-                units=128,
-                use_bias=True,
-                activation='relu',
-                name='Head_dense1',
-        )
 
-        self.dense2 = layers.Dense(
+        self.dense = layers.Dense(
                 units=classes,
                 use_bias=True,
                 activation='softmax',
@@ -269,8 +263,8 @@ class ClassificationHead(layers.Layer):
 
     def call(self, inputs, training=False, **kwargs):
         _ = self.global_avg(inputs)
-        _ = self.dense1(_)
-        _ = self.dense2(_)
+        _ = self.dense(_)
+        _ = self.softmax(_) if not training else _
         return _
 
 class RegressionHead(layers.Layer):
