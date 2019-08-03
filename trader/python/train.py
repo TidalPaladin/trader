@@ -34,57 +34,69 @@ TFREC_SPEC = {
     'label': tf.io.FixedLenFeature([], tf.int64),
 }
 
-def read_tfrecs():
+def preprocess():
+
+    logging.info("Reading TFRecords from: %s/%s", FLAGS.src, FLAGS.glob)
 
     def _parse_tfrec(example_proto):
+        # Sequence features (feature matrix)
         seq_f = {'features': TFREC_SPEC['features']}
+
+        # Context features (FixedLenFeature scalars)
         context_f = {x: TFREC_SPEC[x] for x in ['change', 'label']}
-        return tf.io.parse_single_sequence_example(example_proto, context_f, seq_f)
+
+        # Read example proto into dicts
+        con, seq, dense = tf.io.parse_sequence_example(example_proto, context_f, seq_f)
+
+        # Return (features, label) tuple of tensors
+        return seq['features'], con[FLAGS.label]
 
     # Build a list of input TFRecord files
     target = Path(FLAGS.src).glob(FLAGS.glob)
     target = [x.as_posix() for x in target]
 
     # Read files to dataset and apply parsing function
-    examples = tf.data.TFRecordDataset(list(target)).map(_parse_tfrec)
+    raw_tfrecs = tf.data.TFRecordDataset(list(target))
 
-    # Flatten dict to tuple of (feature tensor, label)
-    return examples.map(lambda con, seq: (seq['features'], con[FLAGS.label]))
-
-def preprocess():
-    """
-    Read input TFRecords and return a (train, validate) Dataset tuple
-    Handles all repeat/shuffle/batching according to CLI flags. Resultant
-    datasets will produce (features, label) tensors.
-    """
-
-    # Detect CSV vs TFRecord
-    ds = read_tfrecs()
-
-    # Train / test split
-    if FLAGS.validation_size > 0 and not FLAGS.speedrun:
-        train = ds.skip(FLAGS.validation_size)
-        validate = ds.take(FLAGS.validation_size)
+    # Training/test split
+    if FLAGS.speedrun:
+        logging.info("Taking %s examples for validation", FLAGS.batch_size * 10)
+        train = raw_tfrecs.skip(FLAGS.validation_size).take(FLAGS.batch_size * 100)
+        validate = raw_tfrecs.take(FLAGS.batch_size * 10)
     else:
-        train = ds.skip(hparams[HP_BATCH_SIZE])
-        validate = ds.take(hparams[HP_BATCH_SIZE])
+        logging.info("Taking %s examples for validation", FLAGS.validation_size)
+        train = raw_tfrecs.skip(FLAGS.validation_size)
+        validate = raw_tfrecs.take(FLAGS.validation_size)
 
-    # Shuffle if reqested
-    if FLAGS.shuffle_size > 0:
-        train = train.shuffle(FLAGS.shuffle_size)
+    #train = train.cache()
+    #validate = validate.cache()
+
+    # Prefetch if requested
+    if FLAGS.prefetch:
+        logging.debug("Prefetching data")
+        train = train.prefetch(buffer_size=128)
+        validate = validate.prefetch(buffer_size=128)
 
     # Repeat if requested
     if FLAGS.repeat:
+        logging.debug("Repeating dataset")
         train = train.repeat()
         validate = validate.repeat()
 
+    # Shuffle if reqested
+    if FLAGS.shuffle_size > 0:
+        logging.debug("Shuffling with buffer size %i", FLAGS.shuffle_size)
+        train = train.shuffle(FLAGS.shuffle_size)
+        validate = validate.shuffle(FLAGS.shuffle_size)
+
     # Batch
+    logging.debug("Applying batch size %i", hparams[HP_BATCH_SIZE])
     validate = validate.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
     train = train.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
 
-    if FLAGS.prefetch:
-        train = train.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-        validate = validate.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+    # Parse serialized example Protos before handoff to training pipeline
+    train = train.map(_parse_tfrec, num_parallel_calls=AUTOTUNE)
+    validate = validate.map(_parse_tfrec, num_parallel_calls=AUTOTUNE)
 
     return train, validate
 
