@@ -1,0 +1,133 @@
+spark-submit --driver-memory 60G --master 'local[*]' ass.jar --quantize 5 --norm maxabs --max-change 20 -o ./dest/ --date 2015 --future 3 './src/*.csv'
+19/08/02 23:34:47 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+log4j:WARN No appenders could be found for logger (Trader$).
+log4j:WARN Please initialize the log4j system properly.
+log4j:WARN See http://logging.apache.org/log4j/1.2/faq.html#noconfig for more info.
+Using Spark's default log4j profile: org/apache/spark/log4j-defaults.properties
+19/08/02 23:34:47 INFO SparkContext: Running Spark version 2.4.3
+19/08/02 23:34:47 INFO SparkContext: Submitted application: trader
+19/08/02 23:34:47 INFO SecurityManager: Changing view acls to: tidal
+19/08/02 23:34:47 INFO SecurityManager: Changing modify acls to: tidal
+19/08/02 23:34:47 INFO SecurityManager: Changing view acls groups to:
+19/08/02 23:34:47 INFO SecurityManager: Changing modify acls groups to:
+19/08/02 23:34:47 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users  with view permissions: Set(tidal); groups with view permissions: Set(); users  with modify permissions: Set(tidal); groups with modify permissions: Set()
+19/08/02 23:34:47 INFO Utils: Successfully started service 'sparkDriver' on port 36489.
+19/08/02 23:34:48 INFO SparkEnv: Registering MapOutputTracker
+19/08/02 23:34:48 INFO SparkEnv: Registering BlockManagerMaster
+19/08/02 23:34:48 INFO BlockManagerMasterEndpoint: Using org.apache.spark.storage.DefaultTopologyMapper for getting topology information
+19/08/02 23:34:48 INFO BlockManagerMasterEndpoint: BlockManagerMasterEndpoint up
+19/08/02 23:34:48 INFO DiskBlockManager: Created local directory at /tmp/blockmgr-76f340ae-0a7d-4302-b068-8a754fcc9999
+19/08/02 23:34:48 INFO MemoryStore: MemoryStore started with capacity 31.8 GB
+19/08/02 23:34:48 INFO SparkEnv: Registering OutputCommitCoordinator
+19/08/02 23:34:48 INFO Utils: Successfully started service 'SparkUI' on port 4040.
+19/08/02 23:34:48 INFO SparkUI: Bound SparkUI to 0.0.0.0, and started at http://spark:4040
+19/08/02 23:34:48 INFO SparkContext: Added JAR file:/mnt/valak/documents/trader/ass.jar at spark://spark:36489/jars/ass.jar with timestamp 1564788888336
+19/08/02 23:34:48 INFO Executor: Starting executor ID driver on host localhost
+19/08/02 23:34:48 INFO Utils: Successfully started service 'org.apache.spark.network.netty.NettyBlockTransferService' on port 38539.
+19/08/02 23:34:48 INFO NettyBlockTransferService: Server created on spark:38539
+19/08/02 23:34:48 INFO BlockManager: Using org.apache.spark.storage.RandomBlockReplicationPolicy for block replication policy
+19/08/02 23:34:48 INFO BlockManagerMaster: Registering BlockManager BlockManagerId(driver, spark, 38539, None)
+19/08/02 23:34:48 INFO BlockManagerMasterEndpoint: Registering block manager spark:38539 with 31.8 GB RAM, BlockManagerId(driver, spark, 38539, None)
+19/08/02 23:34:48 INFO BlockManagerMaster: Registered BlockManager BlockManagerId(driver, spark, 38539, None)
+19/08/02 23:34:48 INFO BlockManager: Initialized BlockManager: BlockManagerId(driver, spark, 38539, None)
+Processed DataFrame before feature matrix rollup:
++-----------+----------+--------------------+-----+-------------------+
+|     symbol|      date|            features|label|             change|
++-----------+----------+--------------------+-----+-------------------+
+|-2068469010|2016-01-04|[2.61149709769434...|  0.0| -6.918241143919706|
+|-2068469010|2016-01-05|[2.61149709769434...|  0.0|-1.3605461374812386|
+|-2068469010|2016-01-06|[2.47405000850680...|  0.0| -5.782315407662519|
+|-2068469010|2016-01-07|[2.38241839724864...|  0.0| -9.863948143473486|
+|-2068469010|2016-01-08|[2.3366027008528E...|  0.0|-14.965988860500318|
+|-2068469010|2016-01-11|[2.29078700445695...|  0.0| -15.60283446898364|
+|-2068469010|2016-01-12|[2.29078700445695...|  0.0|-19.858153114243898|
+|-2068469010|2016-01-13|[2.10752400040710...|  3.0| 0.9259294825817742|
+|-2068469010|2016-01-14|[1.78681390716971...|  1.0|-0.4504500150622546|
+|-2068469010|2016-01-15|[1.69518240514479...|  4.0|  8.333332164614841|
+|-2068469010|2016-01-19|[1.78681390716971...|  3.0| 0.4504500150622546|
+|-2068469010|2016-01-20|[1.83262960356556...|  4.0|  6.666667120797294|
+|-2068469010|2016-01-21|[1.78681390716971...|  0.0| -2.136754122267317|
+|-2068469010|2016-01-22|[1.78681390716971...|  0.0| -2.136754122267317|
+|-2068469010|2016-01-25|[1.83262960356556...|  4.0|  4.954954461514996|
+|-2068469010|2016-01-26|[1.74099810154063...|  4.0| 11.574077692051588|
+|-2068469010|2016-01-27|[1.74099810154063...|  4.0|  7.456142744969603|
+|-2068469010|2016-01-28|[1.83262960356556...|  4.0| 3.3333341280619377|
+|-2068469010|2016-01-29|[1.97007691121957...|  4.0|  6.837604225086865|
+|-2068469010|2016-02-01|[2.29078700445695...|  0.0|-3.1007794919518323|
++-----------+----------+--------------------+-----+-------------------+
+only showing top 20 rows
+
+root
+ |-- symbol: integer (nullable = false)
+ |-- date: date (nullable = true)
+ |-- features: vector (nullable = true)
+ |-- label: double (nullable = true)
+ |-- change: double (nullable = true)
+
+Processed DataFrame label stats
++-------+------------------+-------------------+------------------+-----------------+-----------------+------------------+------------------+--------------------+
+|summary|             label|             change|              high|              low|             open|             close|            volume|            position|
++-------+------------------+-------------------+------------------+-----------------+-----------------+------------------+------------------+--------------------+
+|  count|           3979018|            3979018|           3979018|          3979018|          3979018|           3979018|           3979018|             3979018|
+|   mean|1.9947484530102653|0.04005614934707307|152.78904054822007|140.6995817807469|146.9374934062711|145.61130783906364| 931439.8564814233|   0.662492110208205|
+| stddev| 1.416038367568288| 2.8784027526909735|  8629.79009257682| 7481.44163183484|8082.061607034808| 7944.587695002541|3856321.2380671147|   0.293272768791827|
+|    min|               0.0| -19.99999980131785|             0.001|            0.001|            0.001|             0.001|                 0|0.001592652916486...|
+|    max|               4.0|               20.0|         2182656.0|        1764000.0|        1999200.0|         1886304.0|         355026800|  0.9999938573428341|
++-------+------------------+-------------------+------------------+-----------------+-----------------+------------------+------------------+--------------------+
+
+Average percent change within a label:
++-----+------+--------------------+
+|label| count|          avg_change|
++-----+------+--------------------+
+|  4.0|793607|   3.646675523659177|
+|  3.0|793683|  0.8020594666200253|
+|  2.0|794330|0.052515199488089546|
+|  1.0|793003|  -0.697984027209248|
+|  0.0|804395| -3.5547647829333133|
++-----+------+--------------------+
+
+Dense DataFrame: Dates should be strided here
++-----------+----------+--------------------+-----------+-----+
+|     symbol|      date|            features|     change|label|
++-----------+----------+--------------------+-----------+-----+
+|-2068469010|2018-05-15|[[1.1330232314316...| -2.0278363|    0|
+|-2068469010|2018-05-10|[[1.2975017453425...| -1.9823414|    0|
+|-2068469010|2018-04-30|[[1.0986614263647...| -2.7929742|    0|
+|-2068469010|2018-04-25|[[1.0711719648339...| -0.9281856|    1|
+|-2068469010|2018-04-20|[[1.2077029367134...| -0.7452441|    1|
+|-2068469010|2018-04-10|[[1.3387358939454...|   2.694725|    4|
+|-2068469010|2018-04-05|[[1.3515643326296...|  0.7035683|    3|
+|-2068469010|2018-03-26|[[1.5375763003098...|  -3.603466|    0|
+|-2068469010|2018-03-21|[[1.7226717574423...| -4.8781734|    0|
+|-2068469010|2018-03-16|[[1.8179685807188...|  -7.346639|    0|
+|-2068469010|2018-03-01|[[1.6979313906218...| -1.1166301|    1|
+|-2068469010|2018-02-14|[[1.7290861078643...| 0.20665802|    2|
+|-2068469010|2018-02-09|[[1.6589879066821...|   4.261056|    4|
+|-2068469010|2018-01-30|[[1.5128357587161...| 0.08433372|    2|
+|-2068469010|2018-01-25|[[1.5966784721972...|  12.269354|    4|
+|-2068469010|2018-01-10|[[1.6062999104435...|  12.307442|    4|
+|-2068469010|2018-01-05|[[1.6883099523755...|   2.886496|    4|
+|-2068469010|2017-12-26|[[1.8115544050701...|  -1.365304|    0|
+|-2068469010|2017-12-21|[[1.8120124855708...| 0.76844066|    3|
+|-2068469010|2017-12-11|[[1.8385856987136...|-0.25176328|    1|
++-----------+----------+--------------------+-----------+-----+
+only showing top 20 rows
+
+Write DataFrame schema:
+root
+ |-- features: array (nullable = true)
+ |    |-- element: array (containsNull = true)
+ |    |    |-- element: double (containsNull = false)
+ |-- change: float (nullable = true)
+ |-- label: integer (nullable = true)
+
+Write DataFrame metrics:
++-----+------------+-------------------+-----------+-----------+
+|label|count(label)|        avg(change)|max(change)|min(change)|
++-----+------------+-------------------+-----------+-----------+
+|    4|      132695|   3.66421293120821|       20.0|   1.407616|
+|    3|      128349| 0.8014366683481615|  1.4075835|  0.3433791|
+|    2|      126061|0.05593315338919003|  0.3433757|-0.22261602|
+|    1|      124922|-0.7000547042755436|-0.22262889| -1.3452382|
+|    0|      127979| -3.601497632317114| -1.3452882|      -20.0|
++-----+------------+-------------------+-----------+-----------+
