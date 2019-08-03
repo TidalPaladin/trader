@@ -53,6 +53,12 @@ flags.DEFINE_bool(
     'Run one epoch for each hyperparam setting and exit'
 )
 
+flags.DEFINE_bool(
+    'attention',
+    True,
+    'If true, include a multi-head attention layer'
+)
+
 flags.DEFINE_integer(
     'shuffle_size',
     4096,
