@@ -167,6 +167,13 @@ flags.DEFINE_bool(
     'Attempt to resume from the most recent checkpoint'
 )
 
+flags.DEFINE_list(
+    'weighted',
+    None,
+    ('A list of weights to use for each class.'
+     'must have len(weighted) == num classes')
+)
+
 flags.register_validator(
     'src',
     lambda v: os.path.isdir(v) and os.access(v, os.R_OK),
@@ -245,3 +252,8 @@ flags.register_validator(
     message='--resume must point to an existing checkpoint file'
 )
 
+flags.register_validator(
+    'weighted',
+    lambda v: v == None or len(v) == FLAGS.classes,
+    message='--resume must point to an existing checkpoint file'
+)
