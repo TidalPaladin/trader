@@ -1,0 +1,73 @@
+This shows the speedrun flag, which uses a small epoch / validation
+size.
+
+
+docker exec -it trader python /app/train.py --classes 5 --levels=4,10,6,4 --speedrun --dry
+
+2019-08-03 23:00:31.294533: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcuda.so.1
+2019-08-03 23:00:31.305754: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1640] Found device 0 with properties:
+name: GeForce GTX 970 major: 5 minor: 2 memoryClockRate(GHz): 1.253
+pciBusID: 0000:03:00.0
+2019-08-03 23:00:31.305923: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.0
+2019-08-03 23:00:31.306907: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10.0
+2019-08-03 23:00:31.307698: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcufft.so.10.0
+2019-08-03 23:00:31.307887: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcurand.so.10.0
+2019-08-03 23:00:31.309024: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusolver.so.10.0
+2019-08-03 23:00:31.309818: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusparse.so.10.0
+2019-08-03 23:00:31.312067: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+2019-08-03 23:00:31.313188: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1763] Adding visible gpu devices: 0
+2019-08-03 23:00:31.313408: I tensorflow/core/platform/cpu_feature_guard.cc:142] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2019-08-03 23:00:31.373533: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x35357f0 executing computations on platform CUDA. Devices:
+2019-08-03 23:00:31.373554: I tensorflow/compiler/xla/service/service.cc:175]   StreamExecutor device (0): GeForce GTX 970, Compute Capability 5.2
+2019-08-03 23:00:31.375098: I tensorflow/core/platform/profile_utils/cpu_utils.cc:94] CPU Frequency: 3820190000 Hz
+2019-08-03 23:00:31.375537: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x3b417e0 executing computations on platform Host. Devices:
+2019-08-03 23:00:31.375550: I tensorflow/compiler/xla/service/service.cc:175]   StreamExecutor device (0): <undefined>, <undefined>
+2019-08-03 23:00:31.375992: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1640] Found device 0 with properties:
+name: GeForce GTX 970 major: 5 minor: 2 memoryClockRate(GHz): 1.253
+pciBusID: 0000:03:00.0
+2019-08-03 23:00:31.376021: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.0
+2019-08-03 23:00:31.376036: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10.0
+2019-08-03 23:00:31.376050: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcufft.so.10.0
+2019-08-03 23:00:31.376062: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcurand.so.10.0
+2019-08-03 23:00:31.376075: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusolver.so.10.0
+2019-08-03 23:00:31.376087: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusparse.so.10.0
+2019-08-03 23:00:31.376099: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+2019-08-03 23:00:31.376799: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1763] Adding visible gpu devices: 0
+2019-08-03 23:00:31.376826: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.0
+2019-08-03 23:00:31.377333: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1181] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-08-03 23:00:31.377345: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1187]      0
+2019-08-03 23:00:31.377351: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1200] 0:   N
+2019-08-03 23:00:31.378077: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1326] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 3673 MB memo
+ry) -> physical GPU (device: 0, name: GeForce GTX 970, pci bus id: 0000:03:00.0, compute capability: 5.2)
+I0803 23:00:36.227894 140460454233920 train.py:44] Reading TFRecords from: /data/tfrecords/part-r-*
+I0803 23:00:36.234701 140460454233920 train.py:68] Taking 2560 examples for validation
+I0803 23:00:36.323789 140460454233920 train.py:177] Fitting model with args:
+{
+  "x": "<ParallelMapDataset shapes: ((256, None, 6), (256,)), types: (tf.float32, tf.int64)>",
+  "epochs": "100",
+  "steps_per_epoch": "110",
+  "validation_data": "<ParallelMapDataset shapes: ((256, None, 6), (256,)), types: (tf.float32, tf.int64)>",
+  "validation_steps": "15",
+  "class_weight": "None",
+  "callbacks": "[]",
+  "initial_epoch": "0"
+}
+Epoch 1/100
+2019-08-03 23:01:18.629146: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10.0
+2019-08-03 23:01:18.776027: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+110/110 [==============================] - 63s 574ms/step - loss: 1.3084 - sparse_categorical_accuracy: 0.4631 - sparse_top_k_categorical_accuracy: 0.7225 - val_loss: 1.6391
+- val_sparse_categorical_accuracy: 0.1992 - val_sparse_top_k_categorical_accuracy: 0.6914
+Epoch 2/100
+110/110 [==============================] - 17s 152ms/step - loss: 1.2524 - sparse_categorical_accuracy: 0.4854 - sparse_top_k_categorical_accuracy: 0.7506 - val_loss: 1.6512
+- val_sparse_categorical_accuracy: 0.1992 - val_sparse_top_k_categorical_accuracy: 0.5286
+Epoch 3/100
+110/110 [==============================] - 17s 152ms/step - loss: 1.2329 - sparse_categorical_accuracy: 0.4946 - sparse_top_k_categorical_accuracy: 0.7652 - val_loss: 1.6320
+- val_sparse_categorical_accuracy: 0.1992 - val_sparse_top_k_categorical_accuracy: 0.2362
+Epoch 4/100
+110/110 [==============================] - 17s 152ms/step - loss: 1.2155 - sparse_categorical_accuracy: 0.5019 - sparse_top_k_categorical_accuracy: 0.7770 - val_loss: 1.6457
+- val_sparse_categorical_accuracy: 0.1839 - val_sparse_top_k_categorical_accuracy: 0.2357
+Epoch 5/100
+110/110 [==============================] - 17s 152ms/step - loss: 1.2080 - sparse_categorical_accuracy: 0.5063 - sparse_top_k_categorical_accuracy: 0.7767 - val_loss: 1.5729
+- val_sparse_categorical_accuracy: 0.2789 - val_sparse_top_k_categorical_accuracy: 0.5883
+Epoch 6/100
+ 29/110 [======>.......................] - ETA: 11s - loss: 1.1853 - sparse_categorical_accuracy: 0.5185 - sparse_top_k_categorical_accuracy: 0.7861
