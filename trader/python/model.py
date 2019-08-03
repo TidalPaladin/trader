@@ -256,9 +256,11 @@ class ClassificationHead(layers.Layer):
         self.dense = layers.Dense(
                 units=classes,
                 use_bias=True,
-                activation='softmax',
+                activation=None,
                 name='Head_dense2',
         )
+
+        self.softmax = layers.Softmax()
 
 
     def call(self, inputs, training=False, **kwargs):
