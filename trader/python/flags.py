@@ -23,6 +23,12 @@ flags.DEFINE_string(
     'Destination directory for checkpoints / Tensorboard logs'
 )
 
+flags.DEFINE_bool(
+    'dry',
+    False,
+    'If true, dont write Tensorboard logs or checkpoint files'
+)
+
 flags.DEFINE_integer(
     'batch_size',
     128,
