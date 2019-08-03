@@ -114,7 +114,7 @@ def construct_model():
 
     return model
 
-def train_model(model, train, validate):
+def train_model(model, train, validate, initial_epoch):
 
     # Metrics / loss / optimizer
     if FLAGS.mode == 'regression':
@@ -123,37 +123,52 @@ def train_model(model, train, validate):
     else:
         metrics = [
             tf.keras.metrics.SparseCategoricalAccuracy(),
+            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2),
         ]
-        loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=hparams[HP_LR])
+    optimizer = tf.keras.optimizers.Adam(
+            learning_rate=hparams[HP_LR],
+            epsilon=0.1
+    )
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
 
     if FLAGS.speedrun:
-        steps_per_epoch = 100
-        validation_steps = 1
-        model_callbacks = [ tf.keras.callbacks.LambdaCallback(
-                on_epoch_end=lambda x, y: quick_eval(model, train, FLAGS.mode)
-        )]
+        steps_per_epoch = 110
+        validation_steps = 15
+
+        # Disabled output printing, slows things down
+        model_callbacks = []
+        # model_callbacks = [ tf.keras.callbacks.LambdaCallback(
+        #         on_epoch_end=lambda x, y: quick_eval(model, train, FLAGS.mode)
+        # )]
 
     else:
+        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE]
         model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
         steps_per_epoch=FLAGS.steps_per_epoch
-        validation_data=validate
-        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE]
 
-    assert(FLAGS.validation_size >= 0)
-    assert(steps_per_epoch > 0)
-    assert(validation_steps >= 0)
+    if FLAGS.weighted:
+        weights = {i: float(x) for i, x in enumerate(FLAGS.weighted)}
+        logging.debug("Using class weights", weights)
+    else:
+        weights = None
 
-    history = model.fit(
-        train,
-        epochs=FLAGS.epochs,
-        steps_per_epoch=steps_per_epoch,
-        validation_data=validate,
-        validation_steps=validation_steps,
-        callbacks=model_callbacks
-    )
+
+
+    fit_args = {
+        'x': train,
+        'epochs': FLAGS.epochs,
+        'steps_per_epoch': steps_per_epoch,
+        'validation_data': validate,
+        'validation_steps': validation_steps,
+        'class_weight': weights,
+        'callbacks': model_callbacks,
+        'initial_epoch': initial_epoch
+    }
+    pretty_args = json.dumps({k: str(v) for k, v in fit_args.items()}, indent=2)
+    logging.info("Fitting model with args: \n%s", pretty_args)
+    history = model.fit(**fit_args)
 
 
 # def tune_hparams(model, callbacks):
@@ -214,15 +229,6 @@ def main(argv):
     train, validate = preprocess()
 
 
-    inputs = layers.Input(shape=[128, len(FLAGS.features)], dtype=tf.float32)
-    model = construct_model()
-    outputs = model(inputs)
-
-    if FLAGS.resume:
-        print("Loading weights from %s" % FLAGS.resume)
-        model.load_weights(FLAGS.resume)
-
-
     if FLAGS.summary:
         out_path = os.path.join(FLAGS.artifacts_dir, 'summary.txt')
         model.summary()
@@ -238,7 +244,7 @@ def main(argv):
                 print(f.numpy()[0][:10])
             return
 
-    train_model(model, train, validate)
+    train_model(model, train, validate, initial_epoch)
 
 if __name__ == '__main__':
   app.run(main)
