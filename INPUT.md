@@ -606,18 +606,10 @@ that were resumed using model checkpoints. Further work is needed to
 produce a clean and continuous plot of network performance as time
 becomes available.
 
-<figure>
-		<img src="svgs/epoch_sparse_categorical_accuracy.svg" width=300px>
-    <figcaption>Top 1 Accuracy vs Epoch</figcaption>
-</figure>
-
-<figure>
-		<img src="svgs/epoch_sparse_top_k_categorical_accuracy.svg" width=300px/>
-    <figcaption>Top 2 Accuracy vs Epoch</figcaption>
-</figure>
-
-
-
+| Top 1 Accuracy vs Epoch  | Top 2 Accuracy vs Epoch |
+| ------------- | ------------- |
+|<img src="svgs/epoch_sparse_categorical_accuracy.svg" width=500px>|<img src="svgs/epoch_sparse_top_k_categorical_accuracy.svg" width=500px/>|
+  
 Though the accuracy reached by the model in the available training
 window is acceptable given the difficulty that humans have in
 predicting stock movement, this model would likely perform much better
