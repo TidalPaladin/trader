@@ -1,0 +1,25 @@
+I have made the JAR file and sample dataset public on my S3 bucket.
+You should be able to easily run the Spark portion of the project
+using the following AWS EMR step. Change the output directory (under
+the -o flag) if desired. There is also a FAT jar prebuilt in the
+spark/target directory.
+
+Spark Arguments:
+--class Trader
+
+Jar file:
+s3://cs6350-project/trader-assembly-0.1.jar
+
+Execution arguments:
+--date 2010
+--norm maxabs
+--stride 5
+--future 2
+--max-change 20
+--bucketize -5,-2,2,5
+-o s3://cs6350-project/output
+s3://cs6350-project/data
+
+
+This will produce tfrecords and summary csv files in the given output
+directory.

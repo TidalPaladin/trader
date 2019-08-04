@@ -1,0 +1,112 @@
+**NOTE** This log shows execution in regression mode, but should not
+be considered valid operation. Because no --label flag was set, this
+log was performing regression on the discretized class labels rather
+than the actual percent change. A sanity check should be added in the
+future
+
+
+docker exec -it trader python /app/train.py --mode regression
+2019-08-03 00:35:24.885049: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcuda.so.1
+2019-08-03 00:35:24.888820: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1640] Found device 0 with properties:
+name: GeForce GTX 970 major: 5 minor: 2 memoryClockRate(GHz): 1.253
+pciBusID: 0000:03:00.0
+2019-08-03 00:35:24.889198: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.0
+2019-08-03 00:35:24.891012: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10.0
+2019-08-03 00:35:24.892247: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcufft.so.10.0
+2019-08-03 00:35:24.893663: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcurand.so.10.0
+2019-08-03 00:35:24.895812: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusolver.so.10.0
+2019-08-03 00:35:24.897193: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusparse.so.10.0
+2019-08-03 00:35:24.901182: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+2019-08-03 00:35:24.902409: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1763] Adding visible gpu devices: 0
+2019-08-03 00:35:24.902753: I tensorflow/core/platform/cpu_feature_guard.cc:142] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2019-08-03 00:35:24.961905: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x3778770 executing computations on platform CUDA. Devices:
+2019-08-03 00:35:24.961926: I tensorflow/compiler/xla/service/service.cc:175]   StreamExecutor device (0): GeForce GTX 970, Compute Capability 5.2
+2019-08-03 00:35:24.963513: I tensorflow/core/platform/profile_utils/cpu_utils.cc:94] CPU Frequency: 3820320000 Hz
+2019-08-03 00:35:24.963965: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x3f44fe0 executing computations on platform Host. Devices:
+2019-08-03 00:35:24.963978: I tensorflow/compiler/xla/service/service.cc:175]   StreamExecutor device (0): <undefined>, <undefined>
+2019-08-03 00:35:24.964358: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1640] Found device 0 with properties:
+name: GeForce GTX 970 major: 5 minor: 2 memoryClockRate(GHz): 1.253
+pciBusID: 0000:03:00.0
+2019-08-03 00:35:24.964383: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.0
+2019-08-03 00:35:24.964392: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10.0
+2019-08-03 00:35:24.964399: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcufft.so.10.0
+2019-08-03 00:35:24.964406: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcurand.so.10.0
+2019-08-03 00:35:24.964414: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusolver.so.10.0
+2019-08-03 00:35:24.964421: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcusparse.so.10.0
+2019-08-03 00:35:24.964429: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+2019-08-03 00:35:24.965050: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1763] Adding visible gpu devices: 0
+2019-08-03 00:35:24.965072: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudart.so.10.0
+2019-08-03 00:35:24.965531: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1181] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-08-03 00:35:24.965542: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1187]      0
+2019-08-03 00:35:24.965548: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1200] 0:   N
+2019-08-03 00:35:24.966208: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1326] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 3673 MB memory) -> physical GPU (device: 0, name: GeForce GTX 970, pci bus id: 0000:03:00.0, compute capability: 5.2)
+Epoch 1/100
+2019-08-03 00:35:52.012737: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcublas.so.10.0
+2019-08-03 00:35:52.151470: I tensorflow/stream_executor/platform/default/dso_loader.cc:42] Successfully opened dynamic library libcudnn.so.7
+4000/4000 [==============================] - 276s 69ms/step - loss: 1.8340 - mean_absolute_error: 1.1495 - mean_squared_error: 1.8340 - val_loss: 1.7719 - val_mean_absolute_error: 1.1266 - val_mean_squared_error: 1.7719
+Epoch 2/100
+4000/4000 [==============================] - 251s 63ms/step - loss: 1.7937 - mean_absolute_error: 1.1383 - mean_squared_error: 1.7937 - val_loss: 1.8975 - val_mean_absolute_error: 1.1769 - val_mean_squared_error: 1.8975
+Epoch 3/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7881 - mean_absolute_error: 1.1353 - mean_squared_error: 1.7881 - val_loss: 1.8016 - val_mean_absolute_error: 1.1498 - val_mean_squared_error: 1.8016
+Epoch 4/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7876 - mean_absolute_error: 1.1349 - mean_squared_error: 1.7876 - val_loss: 1.8219 - val_mean_absolute_error: 1.1527 - val_mean_squared_error: 1.8219
+Epoch 5/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.8231 - mean_absolute_error: 1.1520 - mean_squared_error: 1.8231 - val_loss: 1.9332 - val_mean_absolute_error: 1.2041 - val_mean_squared_error: 1.9332
+Epoch 6/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.8108 - mean_absolute_error: 1.1452 - mean_squared_error: 1.8108 - val_loss: 1.7698 - val_mean_absolute_error: 1.1325 - val_mean_squared_error: 1.7698
+Epoch 7/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.8204 - mean_absolute_error: 1.1495 - mean_squared_error: 1.8204 - val_loss: 1.7727 - val_mean_absolute_error: 1.1305 - val_mean_squared_error: 1.7727
+Epoch 8/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7923 - mean_absolute_error: 1.1383 - mean_squared_error: 1.7923 - val_loss: 1.7726 - val_mean_absolute_error: 1.1258 - val_mean_squared_error: 1.7726
+Epoch 9/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7862 - mean_absolute_error: 1.1354 - mean_squared_error: 1.7862 - val_loss: 1.7591 - val_mean_absolute_error: 1.1310 - val_mean_squared_error: 1.7591
+Epoch 10/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7690 - mean_absolute_error: 1.1277 - mean_squared_error: 1.7690 - val_loss: 1.7411 - val_mean_absolute_error: 1.1183 - val_mean_squared_error: 1.7411
+Epoch 11/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7868 - mean_absolute_error: 1.1352 - mean_squared_error: 1.7868 - val_loss: 1.7804 - val_mean_absolute_error: 1.1231 - val_mean_squared_error: 1.7804
+Epoch 12/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7727 - mean_absolute_error: 1.1281 - mean_squared_error: 1.7727 - val_loss: 1.7673 - val_mean_absolute_error: 1.1322 - val_mean_squared_error: 1.7673
+Epoch 13/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7668 - mean_absolute_error: 1.1248 - mean_squared_error: 1.7668 - val_loss: 1.7780 - val_mean_absolute_error: 1.1361 - val_mean_squared_error: 1.7780
+Epoch 14/100
+4000/4000 [==============================] - 251s 63ms/step - loss: 1.7636 - mean_absolute_error: 1.1237 - mean_squared_error: 1.7636 - val_loss: 1.7789 - val_mean_absolute_error: 1.1289 - val_mean_squared_error: 1.7789
+Epoch 15/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7558 - mean_absolute_error: 1.1209 - mean_squared_error: 1.7558 - val_loss: 1.7576 - val_mean_absolute_error: 1.1191 - val_mean_squared_error: 1.7576
+Epoch 16/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7558 - mean_absolute_error: 1.1190 - mean_squared_error: 1.7558 - val_loss: 1.7921 - val_mean_absolute_error: 1.1326 - val_mean_squared_error: 1.7921
+Epoch 17/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7471 - mean_absolute_error: 1.1155 - mean_squared_error: 1.7471 - val_loss: 1.8375 - val_mean_absolute_error: 1.1602 - val_mean_squared_error: 1.8375
+Epoch 18/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7377 - mean_absolute_error: 1.1116 - mean_squared_error: 1.7377 - val_loss: 1.7331 - val_mean_absolute_error: 1.1081 - val_mean_squared_error: 1.7331
+Epoch 19/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7349 - mean_absolute_error: 1.1105 - mean_squared_error: 1.7349 - val_loss: 1.7595 - val_mean_absolute_error: 1.1174 - val_mean_squared_error: 1.7595
+Epoch 20/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7265 - mean_absolute_error: 1.1068 - mean_squared_error: 1.7265 - val_loss: 1.7222 - val_mean_absolute_error: 1.1082 - val_mean_squared_error: 1.7222
+Epoch 21/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7241 - mean_absolute_error: 1.1057 - mean_squared_error: 1.7241 - val_loss: 1.7370 - val_mean_absolute_error: 1.1132 - val_mean_squared_error: 1.7370
+Epoch 22/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7227 - mean_absolute_error: 1.1048 - mean_squared_error: 1.7227 - val_loss: 1.7776 - val_mean_absolute_error: 1.1315 - val_mean_squared_error: 1.7776
+Epoch 23/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7162 - mean_absolute_error: 1.1023 - mean_squared_error: 1.7162 - val_loss: 1.7623 - val_mean_absolute_error: 1.1288 - val_mean_squared_error: 1.7623
+Epoch 24/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7139 - mean_absolute_error: 1.1015 - mean_squared_error: 1.7139 - val_loss: 1.7150 - val_mean_absolute_error: 1.1056 - val_mean_squared_error: 1.7150
+Epoch 25/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7122 - mean_absolute_error: 1.1004 - mean_squared_error: 1.7122 - val_loss: 1.7795 - val_mean_absolute_error: 1.1380 - val_mean_squared_error: 1.7795
+Epoch 26/100
+4000/4000 [==============================] - 251s 63ms/step - loss: 1.7063 - mean_absolute_error: 1.0973 - mean_squared_error: 1.7063 - val_loss: 1.7273 - val_mean_absolute_error: 1.1048 - val_mean_squared_error: 1.7273
+Epoch 27/100
+4000/4000 [==============================] - 251s 63ms/step - loss: 1.7052 - mean_absolute_error: 1.0965 - mean_squared_error: 1.7052 - val_loss: 1.7285 - val_mean_absolute_error: 1.1021 - val_mean_squared_error: 1.7285
+Epoch 28/100
+4000/4000 [==============================] - 250s 63ms/step - loss: 1.7051 - mean_absolute_error: 1.0972 - mean_squared_error: 1.7051 - val_loss: 1.7099 - val_mean_absolute_error: 1.0944 - val_mean_squared_error: 1.7099
+Epoch 29/100
+4000/4000 [==============================] - 247s 62ms/step - loss: 1.7065 - mean_absolute_error: 1.0978 - mean_squared_error: 1.7065 - val_loss: 1.6946 - val_mean_absolute_error: 1.0946 - val_mean_squared_error: 1.6946
+Epoch 30/100
+4000/4000 [==============================] - 247s 62ms/step - loss: 1.7048 - mean_absolute_error: 1.0968 - mean_squared_error: 1.7048 - val_loss: 1.7182 - val_mean_absolute_error: 1.0974 - val_mean_squared_error: 1.7182
+Epoch 31/100
+4000/4000 [==============================] - 246s 61ms/step - loss: 1.6994 - mean_absolute_error: 1.0941 - mean_squared_error: 1.6994 - val_loss: 1.7019 - val_mean_absolute_error: 1.1000 - val_mean_squared_error: 1.7019
+Epoch 32/100
+4000/4000 [==============================] - 246s 61ms/step - loss: 1.7041 - mean_absolute_error: 1.0958 - mean_squared_error: 1.7041 - val_loss: 1.7440 - val_mean_absolute_error: 1.1217 - val_mean_squared_error: 1.7440
+Epoch 33/100
+4000/4000 [==============================] - 247s 62ms/step - loss: 1.7009 - mean_absolute_error: 1.0944 - mean_squared_error: 1.7009 - val_loss: 1.7108 - val_mean_absolute_error: 1.0957 - val_mean_squared_error: 1.7108
+Epoch 34/100
+ 724/4000 [====>.........................] - ETA: 3:21 - loss: 1.6972 - mean_absolute_error: 1.0938 - mean_squared_error: 1.6972^CTraceback (most recent call last):

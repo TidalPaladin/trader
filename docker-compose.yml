@@ -1,0 +1,61 @@
+version: '2.3'
+
+networks:
+  sparknet:
+
+services:
+
+  spark:
+    build: ./spark
+    image: trader-spark
+    container_name: trader-spark
+    hostname: spark
+    networks: [sparknet]
+    ports:
+      - 8080:8080
+      - 7077:7077
+    volumes:
+      - ${SRC_DIR}:/data/src
+      - ${DEST_DIR}:/data/dest
+        #- /home/tidal/Documents/spark/target/scala-2.11:/app
+    environment:
+      - SPARK_MODE=master
+      - SRC_DIR=/data/src
+      - DEST_DIR=/data/dest
+
+  spark-worker:
+    image: trader-spark
+    depends_on:
+      - spark
+    networks: [sparknet]
+    volumes:
+      - ${SRC_DIR}:/data/src
+      - ${DEST_DIR}:/data/dest
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=1
+      - SRC_DIR
+      - DEST_DIR
+
+  trader:
+    build:
+      context: ./trader
+      args:
+        # Must be a 2.X Tensorflow release
+        upstream: 2.0.0b1-gpu-py3
+        #upstream: 2.0.0b1-py3    # CPU version if desried
+    container_name: trader
+    networks: [sparknet]
+    ports:
+      - 6006:6006
+    runtime: nvidia
+    # Env vars are read from .env file
+    volumes:
+      - ${DEST_DIR}:/data # Source directory. Expect a tfrecords subdir by default
+      - ${ARTIFACT_DIR}:/artifacts # Log files / model checkpoints go here
+    environment:
+      - CUDA_VISIBLE_DEVICES # Passthrough from .env file to expose only one GPU
+      - SRC_DIR=/data/tfrecords
+      - ARTIFACTS_DIR=/artifacts
