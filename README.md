@@ -16,7 +16,7 @@ automatically.
 
 The input dataset (taken from
 [this](https://www.kaggle.com/qks1lver/amex-nyse-nasdaq-stock-histories)
-Kaggle challenge) consists of approximately <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/68c2ac99cce135079f03b73f2508b4d9.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/> CSV files, each of which
+Kaggle challenge) consists of approximately <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/68c2ac99cce135079f03b73f2508b4d9.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/> CSV files, each of which
 contains historical price records for a stock symbol from 1970
 to 2018. Each record consists of the following columns:
 
@@ -57,11 +57,11 @@ during quarterly earnings reports, end of year, etc.), and thus this
 information could prove useful to the network. The following function
 was used to calculate a positional encoding based on the day of year:
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/21917a98875f92ca834ead32fb5e1743.svg?invert_in_darkmode" align=middle width=125.07536415pt height=30.1801401pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/21917a98875f92ca834ead32fb5e1743.svg?invert_in_darkmode" align=middle width=125.07536415pt height=30.1801401pt/></p>
 
-This function transforms a day of year on the interval <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/1e9479532e84c4b91ced8a8aca717e88.svg?invert_in_darkmode" align=middle width=49.31516864999999pt height=24.65753399999998pt/> into a real number on a
-continuous interval from <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/9df6b91c7d6cd45f445b4b4480294a5e.svg?invert_in_darkmode" align=middle width=34.70324219999999pt height=24.65753399999998pt/>. Under this transformation, day
-<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/a0a281a58c85511aa52fc3089abf726a.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> and day <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> will have similar values, capturing the idea that
+This function transforms a day of year on the interval <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/1e9479532e84c4b91ced8a8aca717e88.svg?invert_in_darkmode" align=middle width=49.31516864999999pt height=24.65753399999998pt/> into a real number on a
+continuous interval from <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/9df6b91c7d6cd45f445b4b4480294a5e.svg?invert_in_darkmode" align=middle width=34.70324219999999pt height=24.65753399999998pt/>. Under this transformation, day
+<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/a0a281a58c85511aa52fc3089abf726a.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> and day <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> will have similar values, capturing the idea that
 December 31st and January 1st are close to each other. It is worth
 noting that each point under this transformation will be produced by
 two points in the original "day of year" space. This is not ideal, but
@@ -75,7 +75,7 @@ rescale the other original price metrics (high, low, open). This was
 accomplished by apply the following transformation to each unscaled
 price in the record:
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/73ca72dd4bc41905aabe484a9d3e3ea6.svg?invert_in_darkmode" align=middle width=196.3105155pt height=33.81208709999999pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/73ca72dd4bc41905aabe484a9d3e3ea6.svg?invert_in_darkmode" align=middle width=196.3105155pt height=33.81208709999999pt/></p>
 
 After this point the unscaled prices were discarded. This places all
 prices on a shared scale that is invariant to stock splits and other
@@ -84,21 +84,21 @@ price-altering events, improving continuity.
 ### Future Price Calculation
 
 A future percent change in closing price was calculated for each
-record by looking <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days into the future and calculating a pointwise
-or aggregate measure of closing price over those <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days. One such
+record by looking <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days into the future and calculating a pointwise
+or aggregate measure of closing price over those <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days. One such
 strategy is to calculate a pointwise percent change in
-price as follows, where <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> indicates an index of the record to be
+price as follows, where <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> indicates an index of the record to be
 labeled:
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/7a448631210d242b0b4963216a2770b9.svg?invert_in_darkmode" align=middle width=149.43388349999998pt height=36.09514755pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/7a448631210d242b0b4963216a2770b9.svg?invert_in_darkmode" align=middle width=149.43388349999998pt height=36.09514755pt/></p>
 
 Another strategy is to calculate an aggregate of some price metric
-over <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days in the future and calculate percent change from the present
+over <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days in the future and calculate percent change from the present
 price to that aggregate price. For example, one could calculate an average closing
-price over the following <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days and then calculate percent change
+price over the following <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> days and then calculate percent change
 in closing price from the present to that average.
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/4e59936e7d8bb68b24c0ebea46288d23.svg?invert_in_darkmode" align=middle width=303.0574371pt height=49.794650399999995pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/4e59936e7d8bb68b24c0ebea46288d23.svg?invert_in_darkmode" align=middle width=303.0574371pt height=49.794650399999995pt/></p>
 
 The decision to use a pointwise or aggregate basis for percent change
 calculation is dependent on the choice of window size among other
@@ -106,7 +106,7 @@ things. The choice of window size is primarily determined by the style
 of trading to be used, along with the interval between records (if
 this approach were to be applied to by the minute data for day
 trading). For experimentation, percent change in future price was
-calculated relative to the average closing price over a future <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/5dc642f297e291cfdde8982599601d7e.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> day
+calculated relative to the average closing price over a future <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/5dc642f297e291cfdde8982599601d7e.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> day
 window.
 
 ### Spark ML Pipeline
@@ -121,7 +121,7 @@ following stages:
 2. Normalizer - A strategy to normalize each feature to a shared
 	domain. Can be one of the following, or excluded entirely:
 	* `StandardScaler` - Rescales each feature to zero mean unit variance
-	* `MaxAbsScaler` - Rescales each feature to the range <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/e88c070a4a52572ef1d5792a341c0900.svg?invert_in_darkmode" align=middle width=32.87674994999999pt height=24.65753399999998pt/>,
+	* `MaxAbsScaler` - Rescales each feature to the range <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/e88c070a4a52572ef1d5792a341c0900.svg?invert_in_darkmode" align=middle width=32.87674994999999pt height=24.65753399999998pt/>,
 		**preserving sparsity**
 
 3. Labeler - A strategy to assign examples a discretized label based
@@ -148,7 +148,7 @@ to regress to the mean.
 Conversely, when using
 `QuantileDiscretizer` a uniform distribution of examples over each
 class will be created by compressing or expanding bucket ranges such
-that the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/55a049b8f161ae7cfeb0197d75aff967.svg?invert_in_darkmode" align=middle width=9.86687624999999pt height=14.15524440000002pt/>'th bucket contains the top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/2d77e685bfa7e0c249fa2e10b3d67677.svg?invert_in_darkmode" align=middle width=26.30529494999999pt height=24.65753399999998pt/>'th percent change values.
+that the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/55a049b8f161ae7cfeb0197d75aff967.svg?invert_in_darkmode" align=middle width=9.86687624999999pt height=14.15524440000002pt/>'th bucket contains the top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/2d77e685bfa7e0c249fa2e10b3d67677.svg?invert_in_darkmode" align=middle width=26.30529494999999pt height=24.65753399999998pt/>'th percent change values.
 This will manifest as buckets that span only a few percentage points of
 percent change, taxing the network's ability to distinguish these
 classes. However, it does
@@ -157,7 +157,7 @@ price movement predictions.
 
 During experimentation the `MaxAbsScaler` was used as a normalization
 strategy and the `Bucketizer` was used for a labeling strategy with
-a bucket parameter list of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/7c08e246e40a911344a4f63745e12edb.svg?invert_in_darkmode" align=middle width=80.36535375pt height=21.18721440000001pt/>. This produced five discretized
+a bucket parameter list of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/7c08e246e40a911344a4f63745e12edb.svg?invert_in_darkmode" align=middle width=80.36535375pt height=21.18721440000001pt/>. This produced five discretized
 classes in the resultant training set. Unequal bucket widths
 were important in creating a somewhat balanced distribution of
 examples among the labels while not forcing the network to learn
@@ -173,55 +173,55 @@ decision was made to create training examples by aggregating
 chronologically ordered feature vectors over a sliding historical window into a
 feature matrix.
 
-As a concrete example, consider training example <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> with features
-<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/e4ee64ce87613f7cbd2dcdf02f2612a5.svg?invert_in_darkmode" align=middle width=83.13913904999998pt height=22.831056599999986pt/> and a window size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/>. Example <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> would then consist
-of features over the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> previous days for that stock as follows:
+As a concrete example, consider training example <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> with features
+<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/e4ee64ce87613f7cbd2dcdf02f2612a5.svg?invert_in_darkmode" align=middle width=83.13913904999998pt height=22.831056599999986pt/> and a window size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/>. Example <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> would then consist
+of features over the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/> previous days for that stock as follows:
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/479088446b465de276a3db582a119125.svg?invert_in_darkmode" align=middle width=375.3076008pt height=108.49422870000001pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/479088446b465de276a3db582a119125.svg?invert_in_darkmode" align=middle width=375.3076008pt height=108.49422870000001pt/></p>
 
 The result of this process is an intuitively constructed training
-example, consisting of an ordered time series of features over the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/>
+example, consisting of an ordered time series of features over the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/332cc365a4987aacce0ead01b8bdcc0b.svg?invert_in_darkmode" align=middle width=9.39498779999999pt height=14.15524440000002pt/>
 previous days and a label indicating price movement in the near
 future. Implementation of this process is discussed in the following
 section.
 
 We can take further steps to improve the quality of the resultant
 training examples. Consider the case where the process described above
-is applied to two adjacent records, <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> and <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/48a0115fc523b1aae58ade9e16001f59.svg?invert_in_darkmode" align=middle width=33.97362704999999pt height=21.68300969999999pt/>. The result will be
-two training examples with <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/6168db5ca031b9b37e74ce5c0ac732c0.svg?invert_in_darkmode" align=middle width=37.70538914999999pt height=21.18721440000001pt/> feature matrices which have a
+is applied to two adjacent records, <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> and <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/48a0115fc523b1aae58ade9e16001f59.svg?invert_in_darkmode" align=middle width=33.97362704999999pt height=21.68300969999999pt/>. The result will be
+two training examples with <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/6168db5ca031b9b37e74ce5c0ac732c0.svg?invert_in_darkmode" align=middle width=37.70538914999999pt height=21.18721440000001pt/> feature matrices which have a
 substantial overlap. Specifically, we will produce feature matrices as
 follows:
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/75d1142cb18a52dc33e5a71216e96faa.svg?invert_in_darkmode" align=middle width=554.7163974pt height=145.73587544999998pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/75d1142cb18a52dc33e5a71216e96faa.svg?invert_in_darkmode" align=middle width=554.7163974pt height=145.73587544999998pt/></p>
 
-Applying a stride greater than <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> to the historical window will
+Applying a stride greater than <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> to the historical window will
 reduce the amount of overlap between feature matrices, creating a
-more diverse training set. For experimentation a stride of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/9612eecfec9dadf1a81d296bd2473777.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> days
+more diverse training set. For experimentation a stride of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/9612eecfec9dadf1a81d296bd2473777.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> days
 was chosen. This resulted in an adequate number of training examples
-and minimized the overlap in the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/5dc642f297e291cfdde8982599601d7e.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> day future percent change
+and minimized the overlap in the <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/5dc642f297e291cfdde8982599601d7e.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> day future percent change
 window.
 
 Generating the feature matrices as described above is a
 computationally expensive process, especially at small window
 strides and large window sizes. To put this in perspective, consider a
-training set produced from <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/675eeb554f7b336873729327dab98036.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/> stock symbols from <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/28152ca58dcfc4ec27f45fef65cc0292.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/> to <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/38f86e2f958b2cbcb5e8344a839fea3b.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/>
-with a window size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/1e0fe6183c7bbc89521f14af6a035751.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> days and a window stride of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/>. Assume
-the stock only trades <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/88db9c6bd8c9a0b1527a1cedb8501c55.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> days out of the year.  The
+training set produced from <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/675eeb554f7b336873729327dab98036.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/> stock symbols from <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/28152ca58dcfc4ec27f45fef65cc0292.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/> to <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/38f86e2f958b2cbcb5e8344a839fea3b.svg?invert_in_darkmode" align=middle width=32.876837399999985pt height=21.18721440000001pt/>
+with a window size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/1e0fe6183c7bbc89521f14af6a035751.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> days and a window stride of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/>. Assume
+the stock only trades <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/88db9c6bd8c9a0b1527a1cedb8501c55.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> days out of the year.  The
 number of resultant examples is given by
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/6f5b1fbc3ca82b7bfbe7508e8e4a27b6.svg?invert_in_darkmode" align=middle width=224.1322809pt height=40.182651299999996pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/6f5b1fbc3ca82b7bfbe7508e8e4a27b6.svg?invert_in_darkmode" align=middle width=224.1322809pt height=40.182651299999996pt/></p>
 
 Similarly, if we consider this process applied the entirety of the
 dataset without constraint
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/96ed46c5e521b95f562030670eca5da6.svg?invert_in_darkmode" align=middle width=224.1322809pt height=40.182651299999996pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/96ed46c5e521b95f562030670eca5da6.svg?invert_in_darkmode" align=middle width=224.1322809pt height=40.182651299999996pt/></p>
 
-We will have a <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/110fb9d1a8c67745584a783cb430df5c.svg?invert_in_darkmode" align=middle width=52.968029399999985pt height=21.18721440000001pt/> feature matrix per row.
+We will have a <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/110fb9d1a8c67745584a783cb430df5c.svg?invert_in_darkmode" align=middle width=52.968029399999985pt height=21.18721440000001pt/> feature matrix per row.
 If we assume that each feature and the percent change is stored as a
-<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/9b316764e592d513c7c6be2b9e112d73.svg?invert_in_darkmode" align=middle width=16.438418699999993pt height=21.18721440000001pt/> bit float and the label is stored as an <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/005c128d6e551735fa5d938e44e7a613.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> bit integer, we can
+<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/9b316764e592d513c7c6be2b9e112d73.svg?invert_in_darkmode" align=middle width=16.438418699999993pt height=21.18721440000001pt/> bit float and the label is stored as an <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/005c128d6e551735fa5d938e44e7a613.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> bit integer, we can
 calculated the expected size of the resultant training set in
 
-<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/e41d4da6f05c52e2004cf59fffb52c0c.svg?invert_in_darkmode" align=middle width=213.04829865pt height=86.30137065pt/></p>
+<p align="center"><img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/e41d4da6f05c52e2004cf59fffb52c0c.svg?invert_in_darkmode" align=middle width=213.04829865pt height=86.30137065pt/></p>
 
 ## Interfacing with Tensorflow
 
@@ -278,7 +278,7 @@ dataset for training:
 2. Split the dataset into training and validation sets based on a
 	 parameterized validation set size.
 3. Batch training and validation sets into a parameterized batch size.
-	 A batch size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/1e0fe6183c7bbc89521f14af6a035751.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> or <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/9684129ebb778f48019391de80875252.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> was used in an effort to improve tiling
+	 A batch size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/1e0fe6183c7bbc89521f14af6a035751.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> or <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/9684129ebb778f48019391de80875252.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> was used in an effort to improve tiling
 	 efficiency when training on a GPU
 4. Final modifications like `repeat()` and `prefetch()`
 
@@ -295,9 +295,9 @@ to better distinguish features based on their sequential relationship.
 ### Model Architecture
 
 A summary of the model generated by Tensorflow is shown below. By
-default there are four levels of downsampling with <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/b3762e99b2048db4b426cb0a322f783f.svg?invert_in_darkmode" align=middle width=54.79448699999999pt height=21.18721440000001pt/>
+default there are four levels of downsampling with <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/b3762e99b2048db4b426cb0a322f783f.svg?invert_in_darkmode" align=middle width=54.79448699999999pt height=21.18721440000001pt/>
 bottleneck block repeats respectively. During experimentation, it was
-found that a <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/5e431d07072989254bd3b03e63d49636.svg?invert_in_darkmode" align=middle width=63.01369634999999pt height=21.18721440000001pt/> level repeat structure was more robust, and
+found that a <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/5e431d07072989254bd3b03e63d49636.svg?invert_in_darkmode" align=middle width=63.01369634999999pt height=21.18721440000001pt/> level repeat structure was more robust, and
 is shown below:
 
 ```
@@ -361,11 +361,11 @@ Key tunable hyperparameters include the following:
 2. **Batch size** - Tune this as needed for your hardware. It is
 	 probably wise to use a power of two batch size in order to improve
 	 tiling efficiency for matrix matrix multiplication.
-	 A batch size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/9684129ebb778f48019391de80875252.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> was typically used for experiments.
+	 A batch size of <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/9684129ebb778f48019391de80875252.svg?invert_in_darkmode" align=middle width=24.657628049999992pt height=21.18721440000001pt/> was typically used for experiments.
 
 3. **Learning rate** - Learning rate can be tuned directly, with
-	 values around <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/242af53be4184a6239b4e559e992fd45.svg?invert_in_darkmode" align=middle width=37.44306224999999pt height=21.18721440000001pt/> tending to work well. A learning rate greater
-	 than <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/22f2e6fc19e491418d1ec4ee1ef94335.svg?invert_in_darkmode" align=middle width=21.00464354999999pt height=21.18721440000001pt/> often hindered the training process, likely due to the
+	 values around <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/242af53be4184a6239b4e559e992fd45.svg?invert_in_darkmode" align=middle width=37.44306224999999pt height=21.18721440000001pt/> tending to work well. A learning rate greater
+	 than <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/22f2e6fc19e491418d1ec4ee1ef94335.svg?invert_in_darkmode" align=middle width=21.00464354999999pt height=21.18721440000001pt/> often hindered the training process, likely due to the
 	 lack of a robust weight initialization strategy. Learning rate is
 	 reduced in a stepwise manner using a parameterized Tensorflow
 	 callback based on the change in loss between epochs.
@@ -532,15 +532,15 @@ Notable flags include:
 ## Results / Conclusions
 
 The model's classification performance was ultimately benchmarked using both
-categorical accuracy and top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/76c5792347bb90ef71cfbace628572cf.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> categorical accuracy. Due to the
+categorical accuracy and top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/76c5792347bb90ef71cfbace628572cf.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> categorical accuracy. Due to the
 model's complexity, training to convergence was impractical in the
 timeframe alloted for the assignment, but the model still performed
 reasonably well. The plots below show sparse categorical and top k
-accuracy for several (interrupted) runs. Validation top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> categorical
-accuracy reached as high as <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/bbb5e0fdc90354a025c504e65ad6d0a9.svg?invert_in_darkmode" align=middle width=30.137091599999987pt height=24.65753399999998pt/>, while top 2 categorical accuracy
-reached <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/cd35c23d6f29694a2ad05d4e8225b7f6.svg?invert_in_darkmode" align=middle width=30.137091599999987pt height=24.65753399999998pt/>. The model took between five and ten minutes per epoch depending
+accuracy for several (interrupted) runs. Validation top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/> categorical
+accuracy reached as high as <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/bbb5e0fdc90354a025c504e65ad6d0a9.svg?invert_in_darkmode" align=middle width=30.137091599999987pt height=24.65753399999998pt/>, while top 2 categorical accuracy
+reached <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/cd35c23d6f29694a2ad05d4e8225b7f6.svg?invert_in_darkmode" align=middle width=30.137091599999987pt height=24.65753399999998pt/>. The model took between five and ten minutes per epoch depending
 on choice of batch size, which each epoch containing on average
-<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/d601dc72767f0373f93eb363dbe3270f.svg?invert_in_darkmode" align=middle width=56.62113929999999pt height=21.18721440000001pt/> training examples. Note that this training set was a
+<img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/d601dc72767f0373f93eb363dbe3270f.svg?invert_in_darkmode" align=middle width=56.62113929999999pt height=21.18721440000001pt/> training examples. Note that this training set was a
 fraction of the potential number of training examples that could be
 generated from the original dataset. By relaxing price and date
 constraints it is possible to generate a much larger number of
@@ -620,7 +620,7 @@ can be improved. These include:
 	 performance can be directly assessed based on its profitability.
 
 4. Expanding the one dimensional convolution input to two dimensions
-	 by including the top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/None/svgs/55a049b8f161ae7cfeb0197d75aff967.svg?invert_in_darkmode" align=middle width=9.86687624999999pt height=14.15524440000002pt/> correlated stocks over each training
+	 by including the top <img src="https://rawgit.com/in	git@github.com:TidalPaladin/trader/project/svgs/55a049b8f161ae7cfeb0197d75aff967.svg?invert_in_darkmode" align=middle width=9.86687624999999pt height=14.15524440000002pt/> correlated stocks over each training
 	 example window. This would allow the network to condition its
 	 output on the price trends of correlated
 	 stocks in addition to the stock that has been targeted for
