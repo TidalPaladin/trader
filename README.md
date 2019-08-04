@@ -632,7 +632,25 @@ potential.
 
 A `.hdf5` file containing the trained model weights is provided
 in the root directory and can be used with the `--resume` and
-`--speedrun` flags to perform a rough evaluation.
+`--speedrun` flags to perform a rough evaluation as follows:
+
+Copy the model weights file into the running Docker container. It is
+important that the weights file be of the form `name_epoch.hdf5`, as
+the epoch will be read from the filename when resuming.
+
+```
+docker cp trader_27.hdf5 trader:/
+```
+
+Then conduct a speedrun using the saved model weights. The level
+parameterization must match what is given below in order for the
+weights to load correctly.
+
+```
+docker exec -it trader python /app/train.py \
+	--dry --classes 5 --levels 4,6,10,4 \
+	--resume=/trader_27.hdf5 --speedrun
+```
 
 ## Future Work
 
