@@ -1,10 +1,3 @@
----
-header-includes:
-  - \usepackage{graphicx}
-  - \hypersetup{colorlinks=false,
-            allbordercolors={0 0 0},
-            pdfborderstyle={/S/U/W 1}}
----
 # TraderNet
 
 TraderNet was created as a final project for CS6350 - big data. It
