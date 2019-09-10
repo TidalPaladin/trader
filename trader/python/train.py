@@ -14,6 +14,7 @@ from pathlib import Path
 from glob import glob as glob_func
 from util import *
 from model import *
+from loss import *
 
 from tensorboard.plugins.hparams import api as hp
 import tensorflow.feature_column as fc
@@ -130,7 +131,7 @@ def train_model(model, train, validate, initial_epoch):
     else:
         metrics = [
             tf.keras.metrics.SparseCategoricalAccuracy(),
-            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2),
+            SparseCategoricalHighestConfidence()
         ]
         loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
