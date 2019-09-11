@@ -79,7 +79,7 @@ flags.DEFINE_string(
 
 flags.DEFINE_list(
     'levels',
-    [3, 3, 5, 2],
+    [3, 4, 6, 3],
     'Levels to use in the TraderNet encoder architecture.'
 )
 
