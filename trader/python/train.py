@@ -16,19 +16,13 @@ from util import *
 from model import *
 from loss import *
 
-from tensorboard.plugins.hparams import api as hp
 import tensorflow.feature_column as fc
 from tensorflow.keras.layers import *
 
 from absl import app, logging
 from flags import FLAGS
 
-hparams = dict()
 callbacks = list()
-hparam_dir = ''
-
-HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([64, 256, 512]))
-HP_LR = hp.HParam('learning_rate', hp.RealInterval(0.001, 0.1))
 
 # Number of features in written TFRecord files
 TFREC_FEATURES = 6
@@ -96,9 +90,9 @@ def preprocess():
         validate = validate.shuffle(FLAGS.shuffle_size)
 
     # Batch
-    logging.debug("Applying batch size %i", hparams[HP_BATCH_SIZE])
-    validate = validate.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
-    train = train.batch(hparams[HP_BATCH_SIZE], drop_remainder=True)
+    logging.debug("Applying batch size %i", FLAGS.batch_size)
+    validate = validate.batch(FLAGS.batch_size, drop_remainder=True)
+    train = train.batch(FLAGS.batch_size, drop_remainder=True)
 
     # Parse serialized example Protos before handoff to training pipeline
     train = train.map(_parse_tfrec, num_parallel_calls=AUTOTUNE)
@@ -137,33 +131,19 @@ def train_model(model, train, validate, initial_epoch):
         loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
     optimizer = tf.keras.optimizers.Adam(
-            learning_rate=hparams[HP_LR],
+            learning_rate=FLAGS.lr,
             epsilon=0.1
     )
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
 
-    if FLAGS.speedrun:
-        steps_per_epoch = 110
-        validation_steps = 15
-
-        # Disabled output printing, slows things down
-        model_callbacks = []
-        # model_callbacks = [ tf.keras.callbacks.LambdaCallback(
-        #         on_epoch_end=lambda x, y: quick_eval(model, train, FLAGS.mode)
-        # )]
-
-    else:
-        validation_steps=FLAGS.validation_size // hparams[HP_BATCH_SIZE]
-        model_callbacks = callbacks + [hp.KerasCallback(hparam_dir, hparams)]
-        steps_per_epoch=FLAGS.steps_per_epoch
+    validation_steps = FLAGS.validation_size // FLAGS.batch_size
+    steps_per_epoch = FLAGS.steps_per_epoch
 
     if FLAGS.weighted:
         weights = {i: float(x) for i, x in enumerate(FLAGS.weighted)}
         logging.debug("Using class weights", weights)
     else:
         weights = None
-
-
 
     fit_args = {
         'x': train,
@@ -172,28 +152,13 @@ def train_model(model, train, validate, initial_epoch):
         'validation_data': validate,
         'validation_steps': validation_steps,
         'class_weight': weights,
-        'callbacks': model_callbacks,
+        'callbacks': callbacks,
         'initial_epoch': initial_epoch
     }
+
     pretty_args = json.dumps({k: str(v) for k, v in fit_args.items()}, indent=2)
     logging.info("Fitting model with args: \n%s", pretty_args)
     history = model.fit(**fit_args)
-
-
-# def tune_hparams(model, callbacks):
-#     session_num = 0
-#     for bs in HP_BATCH_SIZE.domain.values:
-#         for lr in (HP_LR.domain.min_value, HP_LR.domain.max_value):
-#             hparams = {
-#                 HP_BATCH_SIZE: bs,
-#                 HP_LR: lr,
-#             }
-#             run_name = "run-%d" % session_num
-#             print('--- Starting trial: %s' % run_name)
-#             print({h.name: hparams[h] for h in hparams})
-#             train_model(model, hparams, 1, callbacks)
-#             session_num += 1
-
 
 def main(argv):
 
@@ -228,15 +193,7 @@ def main(argv):
     global callbacks
     callbacks = get_callbacks(FLAGS) if not FLAGS.speedrun else []
 
-    global hparams
-    hparams = {
-            HP_LR: FLAGS.lr,
-            HP_BATCH_SIZE: FLAGS.batch_size
-    }
-    hparam_dir = init_hparams(hparams.keys(), FLAGS)
-
     train, validate = preprocess()
-
 
     if FLAGS.summary:
         out_path = os.path.join(FLAGS.artifacts_dir, 'summary.txt')
