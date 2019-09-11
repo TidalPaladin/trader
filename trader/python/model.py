@@ -192,8 +192,6 @@ class Downsample(layers.Layer):
                 activation=None,
                 padding='same'
         )
-        self.bn_main = layers.BatchNormalization()
-        self.relu_main = layers.ReLU()
 
         # Merge operation to join residual + main paths
         self.merge = layers.Add()
@@ -212,11 +210,12 @@ class Downsample(layers.Layer):
         Return:
             Output of forward pass
         """
+        # BN + ReLU prior to main / residual split
+        inputs = self.bn1(inputs, training=training)
+        inputs = self.relu1(inputs)
 
         # Enter bottleneck
-        _ = self.bn1(inputs, training=training)
-        _ = self.relu1(_)
-        _ = self.channel_conv_1(_)
+        _ = self.channel_conv_1(inputs)
 
         # Spatial convolution
         _ = self.bn2(_, training=training)
@@ -224,10 +223,7 @@ class Downsample(layers.Layer):
         _ = self.spatial_conv(_)
 
         # Main path with convolution
-        # TODO can we use first residual BN + ReLU here?
-        m = self.bn_main(inputs, training=training)
-        m = self.relu_main(m)
-        main = self.main(m)
+        main = self.main(inputs)
 
         # Combine residual and main paths
         return self.merge([main, _])
