@@ -130,8 +130,9 @@ def train_model(model, train, validate, initial_epoch):
         loss = 'mean_squared_error'
     else:
         metrics = [
-            tf.keras.metrics.SparseCategoricalAccuracy(),
-            SparseCategoricalHighestConfidence()
+            tf.keras.metrics.SparseCategoricalAccuracy(name='acc'),
+            SparseCategoricalTopKConfident(name='k_confident', k=5),
+            SparseCategoricalAccuracyAboveConfidence(name='thresh_confident', thresh=0.8)
         ]
         loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
