@@ -48,12 +48,6 @@ flags.DEFINE_bool(
 )
 
 flags.DEFINE_bool(
-    'tune',
-    False,
-    'Run one epoch for each hyperparam setting and exit'
-)
-
-flags.DEFINE_bool(
     'attention',
     True,
     'If true, include a multi-head attention layer'
